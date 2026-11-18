@@ -1,32 +1,51 @@
+# See https://help.github.com/articles/ignoring-files/ for more about ignoring files.
+
 # dependencies
-node_modules/
+/node_modules
+/.pnp
+.pnp.*
+.yarn/*
+!.yarn/patches
+!.yarn/plugins
+!.yarn/releases
+!.yarn/versions
 
-# builds
-dist/
-.next/
-out/
-build/
+# testing
+/coverage
 
-# env
-.env
-.env.*
-!.env.example
+# next.js
+/.next/
+/out/
 
-# data / dumps
-data/
-*.dump
+# production
+/build
 
-# logs
-*.log
+# misc
+.DS_Store
+*.pem
+
+# debug
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
+.pnpm-debug.log*
 
-# OS / editors
-.DS_Store
-.vscode/*
-!.vscode/extensions.json
-.idea/
+# env files (can opt-in for committing if needed)
+.env*
+
+# vercel
+.vercel
+
+# typescript
+*.tsbuildinfo
+next-env.d.ts
+
+# data / dumps
+/data/
+*.dump
 
 # claude local settings
 .claude/settings.local.json
+
+# исходные ассеты из seven-hills-kz-site (тяжёлые, в репозиторий попадают только используемые)
+/_assets/
