@@ -201,3 +201,108 @@ body {
     scroll-behavior: auto;
   }
 }
+
+/* --- /v2: картинки и видео рисует общий WebGL-слой, элементы вёрстки остаются запасными --- */
+[data-gl="on"] .gl-hide {
+  opacity: 0;
+}
+
+/* --- /v2: условные интерфейсы продуктов --- */
+.ui-window {
+  transition: transform 0.6s cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+.ui-card:hover .ui-window {
+  transform: translateY(-3%) scale(1.02);
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .ui-bar {
+    transform-origin: bottom;
+    animation: ui-bar 3.2s ease-in-out infinite;
+  }
+  .ui-ring {
+    animation: ui-ring 4s ease-in-out infinite;
+  }
+  .ui-scan {
+    animation: ui-scan 2.4s ease-in-out infinite;
+  }
+  .ui-blink {
+    animation: art-blink 1.8s steps(2, jump-none) infinite;
+  }
+  .ui-ping {
+    animation: ui-ping 2s ease-out infinite;
+  }
+  .ui-wave {
+    animation: ui-wave 1.8s ease-out infinite;
+  }
+  .ui-line {
+    stroke-dasharray: 1;
+    animation: art-draw 3.6s ease-in-out infinite;
+  }
+  .ui-row {
+    animation: ui-row 4s ease-in-out infinite;
+  }
+}
+.ui-ring {
+  stroke-dashoffset: 20.7;
+}
+
+@keyframes ui-bar {
+  0%,
+  100% {
+    transform: scaleY(0.55);
+  }
+  50% {
+    transform: scaleY(1);
+  }
+}
+@keyframes ui-ring {
+  0%,
+  100% {
+    stroke-dashoffset: 94.2;
+  }
+  45%,
+  80% {
+    stroke-dashoffset: 20.7;
+  }
+}
+@keyframes ui-scan {
+  from {
+    transform: translateX(-100%);
+  }
+  to {
+    transform: translateX(300%);
+  }
+}
+@keyframes ui-ping {
+  from {
+    transform: scale(1);
+    opacity: 0.8;
+  }
+  to {
+    transform: scale(1.6);
+    opacity: 0;
+  }
+}
+@keyframes ui-wave {
+  from {
+    transform: scale(0.3);
+    opacity: 1;
+  }
+  to {
+    transform: scale(1.4);
+    opacity: 0;
+  }
+}
+@keyframes ui-row {
+  0%,
+  100% {
+    background-color: rgb(255 255 255 / 0.05);
+  }
+  10% {
+    background-color: rgb(255 181 65 / 0.18);
+  }
+  25% {
+    background-color: rgb(255 255 255 / 0.05);
+  }
+}

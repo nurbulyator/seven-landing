@@ -28,7 +28,7 @@ export function Numbers() {
   useScrollProgress(sectionRef, onProgress);
 
   return (
-    <section id="about" ref={sectionRef} className="relative h-[480svh] bg-bg-2">
+    <section id="about" ref={sectionRef} data-ribbon="numbers" className="relative h-[480svh] bg-bg-2">
       <div className="sticky top-0 flex h-svh flex-col items-center justify-center overflow-hidden px-5">
         <p className="absolute top-[max(6rem,14svh)] text-[1rem] font-medium text-muted">Seven Hills в цифрах</p>
         <div className="relative h-[clamp(13rem,40svh,24rem)] w-full max-w-[60rem]">
