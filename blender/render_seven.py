@@ -2,6 +2,7 @@
 Покадровый рендер знака «7» для первого экрана (проигрывается прокруткой, как на страницах Apple).
 
   blender -b -P blender/render_seven.py -- <папка> [--frames 1,40,80] [--size 1200] [--samples 160]
+  blender -b -P blender/render_seven.py -- <папка> --turn 61   # для /v2: знак поворачивается за курсором
 
 Фон прозрачный, без тени: кадры подходят и для светлой, и для тёмной темы (тень рисует вёрстка).
 Геометрия — из логотипа (_assets/seven-hills-logo-*.svg): внешняя рамка и малая «7».
@@ -20,7 +21,10 @@ OUT = os.path.abspath(argv[0])
 FRAMES = None
 SIZE = 1200
 SAMPLES = 160
+TURN = 0  # >0: вместо анимации — N кадров поворота от −40° до +40° (кадр выбирается по положению курсора)
 for i, a in enumerate(argv):
+    if a == "--turn":
+        TURN = int(argv[i + 1])
     if a == "--frames":
         FRAMES = [int(x) for x in argv[i + 1].split(",")]
     if a == "--size":
@@ -188,8 +192,22 @@ cam.location = (0, -42, 1.2)
 cam.rotation_euler = (Vector((0, 0, 0)) - Vector(cam.location)).to_track_quat("-Z", "Y").to_euler()
 sc.camera = cam
 
+if TURN:
+    # Без разборки: знак стоит целиком и плавно поворачивается вокруг вертикали
+    for ob in (rig, frame, inner):
+        ob.animation_data_clear()
+    frame.location = inner.location = (0, 0, 0)
+    inner.rotation_euler = (0, 0, 0)
+    sc.frame_start, sc.frame_end = 1, TURN
+    for f in range(1, TURN + 1):
+        t = (f - 1) / (TURN - 1)
+        key(rig, f, rot=(5, 0, -40 + 80 * t), loc=(0, 0, 0))
+    for fc in rig.animation_data.action.fcurves if hasattr(rig.animation_data.action, "fcurves") else []:
+        for kp in fc.keyframe_points:
+            kp.interpolation = "LINEAR"
+
 os.makedirs(OUT, exist_ok=True)
-frames = FRAMES or list(range(1, 121))
+frames = FRAMES or list(range(1, (TURN or 120) + 1))
 for f in frames:
     sc.frame_set(f)
     sc.render.filepath = os.path.join(OUT, f"{f:03d}.png")
