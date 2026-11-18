@@ -25,9 +25,14 @@ function setTheme(theme: Theme) {
   listeners.forEach((l) => l());
 }
 
+/** Текущая тема — для компонентов, которые рисуют сами (WebGL) и не видят CSS-переменных. */
+export function useTheme(): Theme {
+  return useSyncExternalStore<Theme>(subscribe, readTheme, () => "light");
+}
+
 /** Переключатель светлой и тёмной темы. Начальную тему ставит скрипт в layout до отрисовки. */
 export function ThemeToggle() {
-  const theme = useSyncExternalStore<Theme>(subscribe, readTheme, () => "light");
+  const theme = useTheme();
   const next: Theme = theme === "dark" ? "light" : "dark";
 
   return (
