@@ -5,6 +5,7 @@ import { useSyncExternalStore } from "react";
 import { useTheme } from "@/components/ThemeToggle";
 import { FluidCanvas } from "@/components/v2/hero/FluidCanvas";
 import { ReliefCanvas } from "@/components/v2/hero/ReliefCanvas";
+import { ribbonStyles, setRibbonStyle, useRibbonStyle } from "@/components/v2/ribbonStyle";
 import { SevenFrames } from "@/components/v2/SevenFrames";
 import { heroV2 } from "@/content/v2";
 
@@ -40,6 +41,7 @@ function setVariant(v: Variant) {
 
 export function HeroV2() {
   const variant = useSyncExternalStore<Variant>(subscribe, readVariant, () => "seven");
+  const ribbonStyle = useRibbonStyle();
   const theme = useTheme();
   const darkCard = variant === "flow" || theme === "dark";
 
@@ -107,24 +109,46 @@ export function HeroV2() {
         <span>+</span>
       </div>
 
-      <div
-        role="radiogroup"
-        aria-label="Версия первого экрана"
-        className="fixed bottom-4 left-1/2 z-50 flex -translate-x-1/2 items-center gap-1 rounded-full bg-[#0b1214]/85 p-1 text-[0.8rem] text-white shadow-lg backdrop-blur-xl"
-      >
-        <span className="hidden px-3 text-white/60 sm:inline">Первый экран</span>
-        {variants.map((v) => (
-          <button
-            key={v.key}
-            type="button"
-            role="radio"
-            aria-checked={variant === v.key}
-            onClick={() => setVariant(v.key)}
-            className="cursor-pointer rounded-full px-3.5 py-1.5 transition-colors hover:bg-white/10 aria-checked:bg-white aria-checked:text-[#0b1214]"
-          >
-            {v.label}
-          </button>
-        ))}
+      {/* переключатели для сравнения вариантов: первый экран и вид ленты */}
+      <div className="fixed bottom-4 left-1/2 z-50 flex -translate-x-1/2 flex-col items-center gap-2 text-[0.8rem] text-white">
+        <div
+          role="radiogroup"
+          aria-label="Вид ленты"
+          className="flex items-center gap-1 rounded-full bg-[#0b1214]/85 p-1 shadow-lg backdrop-blur-xl"
+        >
+          <span className="hidden px-3 text-white/60 sm:inline">Лента</span>
+          {ribbonStyles.map((st) => (
+            <button
+              key={st.key}
+              type="button"
+              role="radio"
+              aria-checked={ribbonStyle === st.key}
+              onClick={() => setRibbonStyle(st.key)}
+              className="cursor-pointer rounded-full px-3.5 py-1.5 transition-colors hover:bg-white/10 aria-checked:bg-white aria-checked:text-[#0b1214]"
+            >
+              {st.label}
+            </button>
+          ))}
+        </div>
+        <div
+          role="radiogroup"
+          aria-label="Версия первого экрана"
+          className="flex items-center gap-1 rounded-full bg-[#0b1214]/85 p-1 shadow-lg backdrop-blur-xl"
+        >
+          <span className="hidden px-3 text-white/60 sm:inline">Первый экран</span>
+          {variants.map((v) => (
+            <button
+              key={v.key}
+              type="button"
+              role="radio"
+              aria-checked={variant === v.key}
+              onClick={() => setVariant(v.key)}
+              className="cursor-pointer rounded-full px-3.5 py-1.5 transition-colors hover:bg-white/10 aria-checked:bg-white aria-checked:text-[#0b1214]"
+            >
+              {v.label}
+            </button>
+          ))}
+        </div>
       </div>
     </section>
   );
