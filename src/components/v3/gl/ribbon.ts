@@ -1,6 +1,5 @@
 import * as THREE from "three";
 
-import type { RibbonStyle } from "@/components/v3/ribbonStyle";
 
 /**
  * Лента — объёмная трубка, которая «ползёт» по странице за прокруткой, как змейка:
@@ -462,6 +461,8 @@ export type SevenInfo = {
   retractEnd: number;
 };
 
+export type RibbonStyle = "gloss" | "metal" | "glass" | "band";
+
 export type Ribbon = {
   mesh: THREE.Mesh<THREE.BufferGeometry, THREE.ShaderMaterial>;
   /** голова ленты (длина дуги, px) для заданной прокрутки */
@@ -469,7 +470,7 @@ export type Ribbon = {
   tailFor(head: number, vh: number): number;
   /** выставить голову, хвост и время: трубка, торцы и бугорок (uReveal выставляется до вызова) */
   update(head: number, tail: number, time: number): void;
-  /** вид ленты */
+  /** вид ленты (на /v3 всегда плоская лента — "band") */
   setStyle(style: RibbonStyle): void;
   /** полоса бугорка для прохода карты высоты (null — участков под полотном нет) и его высота, px */
   ridge: THREE.Mesh | null;

@@ -5,7 +5,6 @@ import { useSyncExternalStore } from "react";
 import { useTheme } from "@/components/ThemeToggle";
 import { FluidCanvas } from "@/components/v3/hero/FluidCanvas";
 import { ReliefCanvas } from "@/components/v3/hero/ReliefCanvas";
-import { ribbonStyles, setRibbonStyle, useRibbonStyle } from "@/components/v3/ribbonStyle";
 import { SevenFrames } from "@/components/v3/SevenFrames";
 import { heroV3 } from "@/content/v3";
 
@@ -102,7 +101,6 @@ function StatusPanel({ dark }: { dark: boolean }) {
 
 export function HeroV3() {
   const variant = useSyncExternalStore<Variant>(subscribe, readVariant, () => "seven");
-  const ribbonStyle = useRibbonStyle();
   const fill = useSyncExternalStore<Fill>(subscribeFill, readFill, () => "both");
   const showFacts = fill === "facts" || fill === "both";
   const showStatus = fill === "status" || fill === "both";
@@ -189,7 +187,7 @@ export function HeroV3() {
         <span>+</span>
       </div>
 
-      {/* переключатели для сравнения вариантов: наполнение, вид ленты и первый экран
+      {/* переключатели для сравнения вариантов: наполнение и первый экран
           (справа под шапкой, чтобы не закрывали содержимое) */}
       <div className="fixed top-[4.6rem] right-4 z-50 flex flex-col items-end gap-2 text-[0.8rem] text-white">
         <div
@@ -208,25 +206,6 @@ export function HeroV3() {
               className="cursor-pointer rounded-full px-3.5 py-1.5 transition-colors hover:bg-white/10 aria-checked:bg-white aria-checked:text-[#0b1214]"
             >
               {f.label}
-            </button>
-          ))}
-        </div>
-        <div
-          role="radiogroup"
-          aria-label="Вид ленты"
-          className="flex items-center gap-1 rounded-full bg-[#0b1214]/85 p-1 shadow-lg backdrop-blur-xl"
-        >
-          <span className="hidden px-3 text-white/60 sm:inline">Лента</span>
-          {ribbonStyles.map((st) => (
-            <button
-              key={st.key}
-              type="button"
-              role="radio"
-              aria-checked={ribbonStyle === st.key}
-              onClick={() => setRibbonStyle(st.key)}
-              className="cursor-pointer rounded-full px-3.5 py-1.5 transition-colors hover:bg-white/10 aria-checked:bg-white aria-checked:text-[#0b1214]"
-            >
-              {st.label}
             </button>
           ))}
         </div>

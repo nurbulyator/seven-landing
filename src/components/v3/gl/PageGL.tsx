@@ -10,7 +10,6 @@ import {
   type Ribbon,
   type RibbonStep,
 } from "@/components/v3/gl/ribbon";
-import { getRibbonStyle, type RibbonStyle } from "@/components/v3/ribbonStyle";
 
 /**
  * Единый WebGL-слой /v3 поверх страницы (фиксированный холст, камера в пикселях экрана).
@@ -316,7 +315,7 @@ export function PageGL({ ribbon: steps, children }: { ribbon: RibbonStep[]; chil
     const ribbonGroup = new THREE.Group();
     scene.add(ribbonGroup);
 
-    let appliedStyle: RibbonStyle | null = null;
+    let appliedStyle: string | null = null;
     // финал — не прокруткой, а сам: как только сцена финала встала на место, анимация
     // дописывает «7» лентой, проявляет поверх объёмный знак и уводит ленту вверх
     // (0 → 1 за FINALE_SEC; прокрутка назад выше этой точки — та же анимация обратно)
@@ -574,10 +573,9 @@ export function PageGL({ ribbon: steps, children }: { ribbon: RibbonStep[]; chil
             tail = head - (trigLen + (len7 - trigLen) * finTraceOf(finale));
           }
         }
-        const style = getRibbonStyle();
-        if (style !== appliedStyle) {
-          ribbon.setStyle(style);
-          appliedStyle = style;
+        if (appliedStyle !== "band") {
+          ribbon.setStyle("band");
+          appliedStyle = "band";
         }
         const u = ribbon.mesh.material.uniforms;
         u.uReveal.value = hold ? finReveal : 0;
