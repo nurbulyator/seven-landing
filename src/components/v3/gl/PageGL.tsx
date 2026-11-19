@@ -146,12 +146,13 @@ const blurFragment = /* glsl */ `
   void main() {
     float w[5];
     w[0] = 0.227; w[1] = 0.194; w[2] = 0.121; w[3] = 0.054; w[4] = 0.016;
-    float h = texture2D(uTex, vUv).r * w[0];
+    // r — высота рельефа, g — маска самой ленты (по ней просвечивает бирюза)
+    vec2 h = texture2D(uTex, vUv).rg * w[0];
     for (int i = 1; i < 5; i++) {
-      h += texture2D(uTex, vUv + uDir * float(i)).r * w[i];
-      h += texture2D(uTex, vUv - uDir * float(i)).r * w[i];
+      h += texture2D(uTex, vUv + uDir * float(i)).rg * w[i];
+      h += texture2D(uTex, vUv - uDir * float(i)).rg * w[i];
     }
-    gl_FragColor = vec4(h, 0.0, 0.0, 1.0);
+    gl_FragColor = vec4(h, 0.0, 1.0);
   }
 `;
 
@@ -190,15 +191,20 @@ const reliefFragment = /* glsl */ `
     float sheen = max(pow(max(dot(n, Hv), 0.0), 14.0) - pow(Hv.z, 14.0), 0.0);
     // в тёмной теме белые блики и чёрные тени выглядят как дым, а там, где лента петлёй подходит
     // к самой себе, блик ложится на ложбину между прядями серой дымкой. Поэтому в тёмной теме бликов нет:
-    // рельеф держится на мягкой тени и бирюзе, которая просвечивает только по самому гребню ленты
-    float hi = max(lit, 0.0) * mix(1.25, 0.0, uDark) + sheen * mix(0.45, 0.05, uDark);
-    float sh = max(-lit, 0.0) * mix(0.65, 0.45, uDark);
-    float glow = smoothstep(mix(0.45, 0.55, uDark), 1.0, h) * mix(0.06, 0.4, uDark);
+    // рельеф держится на мягкой тени и бирюзе, которая просвечивает по маске самой ленты (канал g) —
+    // ровно её ширины, так что на краю полотна след и лента совпадают
+    float band = smoothstep(0.3, 0.7, texture2D(uHeight, px / uBuf).g);
+    // чтобы и в тёмной теме читалось «лента под тканью», бугорок там тоже освещён — но холодным
+    // приглушённым бликом и только там, где ткань реально приподнята (не в ложбине между прядями петли)
+    float raised = mix(1.0, smoothstep(0.22, 0.55, h), uDark);
+    float hi = (max(lit, 0.0) * mix(1.25, 0.6, uDark) + sheen * mix(0.45, 0.22, uDark)) * raised;
+    float sh = max(-lit, 0.0) * mix(0.65, 0.8, uDark);
+    float glow = mix(smoothstep(0.45, 1.0, h) * 0.06, band * 0.3, uDark);
     float a = clamp(hi + sh + glow, 0.0, 0.9);
     if (a < 0.003) discard;
     // тень не чёрная, а в тон фона: на светлом — серо-бирюзовая
     vec3 shade = mix(vec3(0.16, 0.22, 0.23), vec3(0.0), uDark);
-    vec3 light = mix(vec3(1.0), vec3(0.62, 0.9, 0.93), uDark);
+    vec3 light = mix(vec3(1.0), vec3(0.5, 0.64, 0.66), uDark);
     vec3 col = (light * hi + shade * sh + vec3(0.0, 0.733, 0.769) * glow) / a;
     gl_FragColor = vec4(col, a);
   }

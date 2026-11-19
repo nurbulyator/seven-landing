@@ -440,9 +440,14 @@ const ridgeFragment = /* glsl */ `
     float crest = exp(-pow(d / hw, 2.6));
     float skirt = exp(-pow(d / (hw + uW * 0.3), 2.0) * 2.0);
     float bandH = (0.62 * crest + 0.38 * skirt) * mix(1.1, 0.8, vF);
-    float h = mix(tubeH, bandH, uTwist) * env * (1.0 - smoothstep(0.75, 1.0, abs(v)));
+    float fade = env * (1.0 - smoothstep(0.75, 1.0, abs(v)));
+    float h = mix(tubeH, bandH, uTwist) * fade;
     if (h < 0.0005) discard;
-    gl_FragColor = vec4(h, 0.0, 0.0, 1.0);
+    // второй канал — маска самой ленты ровно её видимой ширины (плашмя — во всю ширину, ребром —
+    // узкая): по ней под тканью просвечивает бирюза, и на краю полотна ширина совпадает с лентой
+    float hb = mix(uR, uR * mix(0.45, 1.9, vF), uTwist);
+    float band = (1.0 - smoothstep(hb * 0.85, hb * 1.05, d)) * fade;
+    gl_FragColor = vec4(h, band, 0.0, 1.0);
   }
 `;
 
