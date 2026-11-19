@@ -2,17 +2,19 @@ import type { RibbonStep } from "@/components/v2/gl/ribbon";
 
 /**
  * Маршрут ленты по /v2. Ключи — значения data-ribbon у элементов страницы,
- * x/y — доли ширины/высоты элемента. Лента: обвивает знак «7» → проходит сквозь заголовок
- * вступления → «капает» в карточку и заливает её → обвивает и утягивает карточку в ролик →
- * петляет вдоль цифр → обвивает заголовок продуктов → идёт через направления и факты →
- * в конце складывается в знак «7».
+ * x/y — доли ширины/высоты элемента, layer — слой участка до следующей точки.
+ * Лента: рождается из объёмного знака «7» первого экрана (знак растворяется и «переливается»
+ * в неё с первым движением колеса) → проходит сквозь заголовок вступления → «капает» в карточку
+ * и заливает её → обвивает и утягивает карточку в ролик → заезжает под край «полотна» с цифрами
+ * и ползает под ним вокруг цифр, пока цифры сменяют друг друга → выходит из-под
+ * нижнего края и проходит за карточками продуктов → прошивает едущие карточки направлений, как нитка
+ * (перед одной, за следующей) → идёт через факты → в конце складывается в знак «7», который снова
+ * становится объёмным.
  */
 export const ribbonRoute: RibbonStep[] = [
-  { at: "hero", x: -0.08, y: 0.22, z: 30 },
-  { at: "hero", x: 0.3, y: 0.12, z: 30 },
-  { loop: "seven-hero", pad: 34, turns: 1.15, from: Math.PI * 1.05, squash: 0.42 },
-  { at: "hero", x: 0.96, y: 0.86, z: 30 },
-  { at: "hero", x: 0.62, y: 1.08, z: 30 },
+  { seven: "seven-hero", lead: 0.45 },
+  // из острия «7» — по продолжению её диагонали, чтобы на стыке не было излома
+  { at: "seven-hero", x: 0.3, y: 0.99, z: 30 },
   { at: "intro-title", x: 0.04, y: -0.15 },
   { at: "intro-title", x: 0.3, y: 0.42 },
   { at: "intro-title", x: 0.62, y: 0.55 },
@@ -23,27 +25,46 @@ export const ribbonRoute: RibbonStep[] = [
   { at: "reel-card", x: 1.03, y: 0.08 },
   { at: "reel-card", x: 0.82, y: 1.06 },
   { at: "reel", x: 0.3, y: 1.1 },
-  { at: "numbers", x: 0.06, y: 0.06 },
-  { at: "numbers", x: 0.94, y: 0.28 },
-  { at: "numbers", x: 0.05, y: 0.52 },
-  { at: "numbers", x: 0.95, y: 0.76 },
-  { at: "numbers", x: 0.4, y: 0.98 },
-  { at: "products-title", x: -0.04, y: 0.2 },
-  { loop: "products-title", pad: 30, turns: 1, from: Math.PI, squash: 0.9 },
-  // по правому краю, между рядами карточек и по левому краю — не закрывая интерфейсы
-  { at: "products", x: 1.03, y: 0.05 },
-  { at: "products", x: 1.03, y: 0.44 },
-  { at: "products", x: 0.55, y: 0.5 },
-  { at: "products", x: -0.03, y: 0.53 },
-  { at: "products", x: -0.03, y: 1.0 },
-  { at: "directions", x: 0.99, y: 0.05 },
-  { at: "directions", x: 0.96, y: 0.5 },
-  { at: "directions", x: 1.0, y: 0.95 },
+  // цифры: лента заезжает под верхний край полотна ещё на подъезде и бродит под ним по краям,
+  // вокруг цифр (не через них), пока сцена стоит; выходит из-под нижнего края, когда сцена уезжает
+  { at: "numbers-stage", x: 0.08, y: -0.06, layer: "under", when: "enter" },
+  { at: "numbers-stage", x: 0.14, y: 0.3, layer: "under", when: "enter" },
+  { at: "numbers-stage", x: 0.08, y: 0.52, layer: "under" },
+  { at: "numbers-stage", x: 0.16, y: 0.76, layer: "under" },
+  { at: "numbers-stage", x: 0.34, y: 0.88, layer: "under" },
+  { at: "numbers-stage", x: 0.56, y: 0.83, layer: "under" },
+  { at: "numbers-stage", x: 0.76, y: 0.89, layer: "under" },
+  { at: "numbers-stage", x: 0.9, y: 0.7, layer: "under" },
+  { at: "numbers-stage", x: 0.84, y: 0.46, layer: "under" },
+  // широкий разворот: крутой бугорок под тканью сам на себя перехлёстывается
+  { at: "numbers-stage", x: 0.92, y: 0.26, layer: "under" },
+  { at: "numbers-stage", x: 0.84, y: 0.13, layer: "under" },
+  { at: "numbers-stage", x: 0.75, y: 0.21, layer: "under" },
+  { at: "numbers-stage", x: 0.77, y: 0.42, layer: "under" },
+  { at: "numbers-stage", x: 0.86, y: 0.66, layer: "under" },
+  { at: "numbers-stage", x: 0.93, y: 0.82, layer: "under" },
+  { at: "numbers-stage", x: 0.86, y: 0.93, layer: "under", when: "leave" },
+  { at: "numbers-stage", x: 0.8, y: 1.1, when: "leave" },
+  // продукты: по диагонали за карточками — видно в просветах между ними
+  { at: "products", x: 0.99, y: -0.08, layer: "behind" },
+  { at: "products", x: 0.74, y: 0.28, layer: "behind" },
+  { at: "products", x: 0.28, y: 0.7, layer: "behind" },
+  { at: "products", x: -0.02, y: 1.04 },
+  // направления: сцена стоит, карточки едут вбок, а лента волной прошивает их, как нитка:
+  // чётные карточки закрывают её (data-occlude), нечётные она перекрывает
+  { at: "directions-stage", x: -0.04, y: 0.43, layer: "behind" },
+  { at: "directions-stage", x: 0.22, y: 0.51, layer: "behind" },
+  { at: "directions-stage", x: 0.48, y: 0.43, layer: "behind" },
+  { at: "directions-stage", x: 0.74, y: 0.51, layer: "behind" },
+  { at: "directions-stage", x: 1.04, y: 0.45 },
   { at: "facts", x: 1.03, y: 0.08 },
   { at: "facts", x: 1.03, y: 0.62 },
   { at: "facts", x: 0.5, y: 0.8 },
   { at: "facts", x: -0.03, y: 0.98 },
-  // глобус — отдельная тёмная сцена, лента идёт «за» неё и выходит в финал
-  { at: "outro", x: 0.08, y: 0.08 },
+  // глобус — отдельная тёмная сцена, лента идёт «за» неё и выходит в финал-паузу
+  { at: "outro-stage", x: 0.08, y: 0.08 },
+  // подлетаем под крючок «7» снизу, чтобы войти в него вверх без излома
+  { at: "outro-seven", x: 0.2, y: 0.52 },
+  { at: "outro-seven", x: 0.308, y: 0.43 },
   { seven: "outro-seven" },
 ];

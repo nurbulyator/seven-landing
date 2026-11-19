@@ -3,13 +3,23 @@
 import { createContext, useContext, useEffect, useRef, useState, type ReactNode } from "react";
 import * as THREE from "three";
 
-import { buildRibbon, type Ribbon, type RibbonStep } from "@/components/v2/gl/ribbon";
+import {
+  buildRibbon,
+  SEVEN_FRAME_STROKE,
+  SEVEN_TURN,
+  type Ribbon,
+  type RibbonStep,
+  type SevenInfo,
+} from "@/components/v2/gl/ribbon";
 
 /**
  * Единый WebGL-слой /v2 поверх страницы (фиксированный холст, камера в пикселях экрана).
  * На нём живут:
  *  - лента, ползущая за прокруткой (ribbon.ts);
- *  - знак «7» из кадров Blender, который поворачивается за курсором;
+ *  - знаки «7» из кадров Blender: поворачиваются за курсором, а на краях маршрута «переливаются»
+ *    в ленту — стартовый растворяется вдоль линии письма следом за головой ленты, финальный
+ *    проявляется по контуру, который лента только что выписала, и трубка уходит в него,
+ *    после чего ведущий к знаку кусок ленты обрезается со вспышкой на стыке;
  *  - карточка-«морф»: маленькая карточка, которую лента заливает цветом, а затем
  *    вытягивает в большой ролик — углы летят с разной задержкой, края выгибаются.
  * Плюс DOM-эффекты: строки с data-shift съезжают по горизонтали, слова с data-push
@@ -35,13 +45,124 @@ const seqVertex = /* glsl */ `
 const seqFragment = /* glsl */ `
   uniform sampler2D uTex;
   uniform float uOpacity;
+  uniform vec2 uP[5];   // осевая линия «7» в UV кадра
+  uniform float uQ[5];  // доля длины линии у каждой её точки
+  uniform float uLo;    // всё, что раньше uLo по линии письма, уже стало лентой (растворилось)
+  uniform float uHi;    // всё, что дальше uHi, ещё не проявилось из ленты
+  uniform float uTime;
+  uniform float uFlash; // вспышка в начале линии письма — там, где обрезается лента
   varying vec2 vUv;
+  float hash(vec2 p) { return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
+  float noise(vec2 p) {
+    vec2 i = floor(p), f = fract(p);
+    vec2 u = f * f * (3.0 - 2.0 * f);
+    return mix(mix(hash(i), hash(i + vec2(1, 0)), u.x), mix(hash(i + vec2(0, 1)), hash(i + vec2(1, 1)), u.x), u.y);
+  }
   void main() {
-    vec4 c = texture2D(uTex, vUv);
+    vec2 uv = vUv;
+    float flash = uFlash * (1.0 - smoothstep(0.0, 0.16, distance(uv, uP[0])));
+    if (uLo > 0.0 || uHi < 1.5) {
+      // ближайшая точка осевой линии и её место по ходу письма
+      float best = 1e9, q = 0.0;
+      vec2 near = uv;
+      for (int i = 0; i < 4; i++) {
+        vec2 a = uP[i], ab = uP[i + 1] - a;
+        float t = clamp(dot(uv - a, ab) / dot(ab, ab), 0.0, 1.0);
+        vec2 c = a + ab * t;
+        float d = distance(uv, c);
+        if (d < best) { best = d; q = mix(uQ[i], uQ[i + 1], t); near = c; }
+      }
+      float n = (noise(uv * 22.0 + uTime * 0.6) - 0.5) * 0.07;
+      // растворяясь, знак сначала теряет края, а ось уходит последней — будто втягивается в ленту;
+      // проявляясь — наоборот, растёт от ленты наружу
+      float e = min(q + n - best * 0.9 - uLo, uHi - (q + n + best * 0.9));
+      if (e < 0.0) discard;
+      float melt = 1.0 - smoothstep(0.0, 0.08, e);
+      uv = mix(uv, near, melt * 0.3);
+      vec4 c = texture2D(uTex, uv);
+      if (c.a < 0.35) discard;
+      vec3 col = mix(c.rgb, vec3(0.25, 0.86, 0.9), melt * 0.85);
+      gl_FragColor = vec4(col, 1.0) * uOpacity;
+      return;
+    }
+    vec4 c = texture2D(uTex, uv);
     if (c.a < 0.35) discard; // прозрачные места не пишут глубину — лента за знаком видна
-    gl_FragColor = vec4(c.rgb, 1.0) * uOpacity;
+    gl_FragColor = vec4(c.rgb + vec3(0.45, 0.95, 1.0) * flash, 1.0) * uOpacity;
   }
 `;
+
+// вспышка на стыке: кольцо разбегается, ядро гаснет (поверх всего; холст прозрачный,
+// поэтому яркость идёт в альфу, а не в чёрный фон)
+const flashVertex = seqVertex;
+const flashFragment = /* glsl */ `
+  uniform float uK;
+  varying vec2 vUv;
+  void main() {
+    float d = length(vUv - 0.5) * 2.0;
+    float ring = exp(-pow((d - mix(0.08, 0.95, sqrt(uK))) * 9.0, 2.0)) * (1.0 - uK);
+    float core = exp(-d * d * 30.0) * pow(1.0 - uK, 2.0) * 1.6;
+    float a = clamp(ring + core, 0.0, 1.0);
+    vec3 col = mix(vec3(0.0, 0.8, 0.85), vec3(0.85, 1.0, 1.0), clamp(core, 0.0, 1.0));
+    gl_FragColor = vec4(col, a);
+  }
+`;
+const easeOut = (t: number) => 1 - Math.pow(1 - t, 3);
+
+// Бугорок под полотном, второй проход: по карте высоты (её рисует полоса ленты, см. ribbon.ts)
+// считаем наклон поверхности в каждом пикселе и даём свет, тень и лёгкую бирюзу по гребню.
+// Слой лежит за всем остальным (глубина у дальней плоскости) и обрезан по полотну.
+const reliefVertex = /* glsl */ `
+  void main() { gl_Position = vec4(position.xy, 0.9999, 1.0); }
+`;
+const reliefFragment = /* glsl */ `
+  uniform sampler2D uHeight;
+  uniform vec2 uBuf;     // размер буфера, px
+  uniform float uH;      // высота рельефа, px буфера
+  uniform float uDark;
+  uniform vec4 uSheet;
+  uniform float uSheetR;
+  float sdBox(vec2 p, vec4 r, float rad) {
+    vec2 q = abs(p - (r.xy + r.zw) * 0.5) - (r.zw - r.xy) * 0.5 + rad;
+    return length(max(q, 0.0)) + min(max(q.x, q.y), 0.0) - rad;
+  }
+  float hAt(vec2 px) { return texture2D(uHeight, px / uBuf).r; }
+  void main() {
+    vec2 px = gl_FragCoord.xy;
+    if (sdBox(px, uSheet, uSheetR) > 0.0) discard;
+    float h = hAt(px);
+    // наклон — фильтром Собеля по окрестности: он замывает мелкую рябь карты высоты
+    float d = 3.0;
+    float tl = hAt(px + vec2(-d, d)), t = hAt(px + vec2(0.0, d)), tr = hAt(px + vec2(d, d));
+    float l = hAt(px + vec2(-d, 0.0)), r = hAt(px + vec2(d, 0.0));
+    float bl = hAt(px + vec2(-d, -d)), b = hAt(px + vec2(0.0, -d)), br = hAt(px + vec2(d, -d));
+    float dx = ((tr + 2.0 * r + br) - (tl + 2.0 * l + bl)) / (8.0 * d) * uH;
+    float dy = ((tl + 2.0 * t + tr) - (bl + 2.0 * b + br)) / (8.0 * d) * uH;
+    if (h < 0.002 && abs(dx) + abs(dy) < 0.002) discard;
+    vec3 n = normalize(vec3(-dx, -dy, 1.0));
+    vec3 L = normalize(vec3(-0.45, 0.65, 0.62));
+    float lit = dot(n, L) - L.z;
+    // матовая поверхность: мягкий широкий отблеск вместо резкого блика
+    vec3 Hv = normalize(L + vec3(0.0, 0.0, 1.0));
+    float sheen = max(pow(max(dot(n, Hv), 0.0), 14.0) - pow(Hv.z, 14.0), 0.0);
+    float hi = max(lit, 0.0) * mix(1.25, 0.7, uDark) + sheen * mix(0.45, 0.35, uDark);
+    float sh = max(-lit, 0.0) * mix(0.65, 1.8, uDark);
+    float glow = smoothstep(0.45, 1.0, h) * mix(0.06, 0.1, uDark);
+    float a = clamp(hi + sh + glow, 0.0, 0.9);
+    if (a < 0.003) discard;
+    // тень не чёрная, а в тон фона: на светлом — серо-бирюзовая
+    vec3 shade = mix(vec3(0.16, 0.22, 0.23), vec3(0.0), uDark);
+    vec3 col = (vec3(1.0) * hi + shade * sh + vec3(0.0, 0.733, 0.769) * glow) / a;
+    gl_FragColor = vec4(col, a);
+  }
+`;
+
+// осевая линия «7» в UV кадра (ось y вверх) и доли её длины у каждой точки
+const STROKE_UV = SEVEN_FRAME_STROKE.map(([x, y]) => new THREE.Vector2(x, 1 - y));
+const STROKE_Q = (() => {
+  const acc = [0];
+  for (let i = 1; i < STROKE_UV.length; i++) acc.push(acc[i - 1] + STROKE_UV[i].distanceTo(STROKE_UV[i - 1]));
+  return acc.map((v) => v / acc[acc.length - 1]);
+})();
 
 const morphVertex = /* glsl */ `
   uniform vec2 uC[4]; // углы в пикселях экрана (GL): лево-верх, право-верх, право-низ, лево-низ
@@ -149,14 +270,62 @@ export function PageGL({ ribbon: steps, children }: { ribbon: RibbonStep[]; chil
     let ribbon: Ribbon | null = null;
     const ribbonGroup = new THREE.Group();
     scene.add(ribbonGroup);
+    const flash = new THREE.Mesh(
+      new THREE.PlaneGeometry(1, 1),
+      new THREE.ShaderMaterial({
+        vertexShader: flashVertex,
+        fragmentShader: flashFragment,
+        transparent: true,
+        depthTest: false,
+        depthWrite: false,
+        uniforms: { uK: { value: 0 } },
+      }),
+    );
+    flash.visible = false;
+    flash.renderOrder = 10;
+    ribbonGroup.add(flash);
+
+    // карта высоты бугорка под полотном: своя сцена и текстура, по которой считается рельеф
+    const heightScene = new THREE.Scene();
+    const heightGroup = new THREE.Group();
+    heightScene.add(heightGroup);
+    const heightTarget = new THREE.WebGLRenderTarget(1, 1, {
+      type: THREE.HalfFloatType,
+      minFilter: THREE.LinearFilter,
+      magFilter: THREE.LinearFilter,
+      depthBuffer: false,
+    });
+    const relief = new THREE.Mesh(
+      new THREE.PlaneGeometry(2, 2),
+      new THREE.ShaderMaterial({
+        vertexShader: reliefVertex,
+        fragmentShader: reliefFragment,
+        transparent: true,
+        depthWrite: false,
+        uniforms: {
+          uHeight: { value: heightTarget.texture },
+          uBuf: { value: new THREE.Vector2(1, 1) },
+          uH: { value: 1 },
+          uDark: { value: 0 },
+          uSheet: { value: new THREE.Vector4() },
+          uSheetR: { value: 32 },
+        },
+      }),
+    );
+    relief.frustumCulled = false;
+    relief.renderOrder = -1;
+    relief.visible = false;
+    scene.add(relief);
 
     const rebuildRibbon = () => {
       if (ribbon) {
         ribbonGroup.remove(ribbon.mesh);
+        if (ribbon.ridge) heightGroup.remove(ribbon.ridge);
         ribbon.dispose();
       }
       ribbon = buildRibbon(steps, vw, vh, vw < 700 ? 8 : 13);
       if (ribbon) ribbonGroup.add(ribbon.mesh);
+      if (ribbon?.ridge) heightGroup.add(ribbon.ridge);
     };
     let rebuildTimer = 0;
     const scheduleRebuild = () => {
@@ -169,6 +338,9 @@ export function PageGL({ ribbon: steps, children }: { ribbon: RibbonStep[]; chil
       vh = window.innerHeight;
       renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
       renderer.setSize(vw, vh, false);
+      const buf = renderer.getDrawingBufferSize(new THREE.Vector2());
+      heightTarget.setSize(buf.x, buf.y);
+      relief.material.uniforms.uBuf.value.copy(buf);
       Object.assign(camera, { left: -vw / 2, right: vw / 2, top: vh / 2, bottom: -vh / 2 });
       camera.updateProjectionMatrix();
       scheduleRebuild();
@@ -206,7 +378,16 @@ export function PageGL({ ribbon: steps, children }: { ribbon: RibbonStep[]; chil
             vertexShader: seqVertex,
             fragmentShader: seqFragment,
             transparent: true,
-            uniforms: { uTex: { value: tex }, uOpacity: { value: 0 } },
+            uniforms: {
+              uTex: { value: tex },
+              uOpacity: { value: 0 },
+              uP: { value: STROKE_UV },
+              uQ: { value: STROKE_Q },
+              uLo: { value: -1 },
+              uHi: { value: 2 },
+              uTime: { value: 0 },
+              uFlash: { value: 0 },
+            },
           }),
         );
         scene.add(mesh);
@@ -270,22 +451,81 @@ export function PageGL({ ribbon: steps, children }: { ribbon: RibbonStep[]; chil
       if (version !== state.version) {
         version = state.version;
         sync();
+        // знак появился или пропал (смена версии первого экрана) — маршрут ленты другой
+        if (vw) scheduleRebuild();
       }
       const t = clock.getElapsedTime();
       const scroll = window.scrollY;
+      // прокрутка, под которую нарисована лента: во время паузы она стоит вместе со сценой
+      const view = ribbon ? ribbon.view(scroll) : scroll;
+
+      // финальный знак: дописав контур, лента «переливается» в объёмную «7», затем ведущий
+      // к знаку кусок ленты обрезается
+      const revealOf = (g: SevenInfo) => clamp01((scroll - g.doneAt) / (g.revealEnd - g.doneAt || 1));
+      const cutOf = (g: SevenInfo) => clamp01((scroll - g.cutStart) / (g.cutEnd - g.cutStart || 1));
 
       // ── лента ──
       let head = 0;
       let tail = 0;
+      flash.visible = false;
       if (ribbon) {
         head = ribbon.headAt(scroll);
         tail = ribbon.tailFor(head, vh);
+        const hold = [...ribbon.sevens.values()].find((g) => !g.lead);
+        const cut = hold ? cutOf(hold) : 0;
+        if (hold && cut > 0) {
+          // знак уже целиком объёмный — трубки внутри него нет, остаётся кусок [tail, start].
+          // Его конец у знака резко отдёргивается назад, хвост догоняет — кусок исчезает.
+          const D = Math.max(0, hold.start - tail);
+          head = hold.start - D * easeOut(cut);
+          tail = Math.min(head, tail + D * cut * cut * cut);
+          const k = clamp01(cut / 0.55);
+          if (k < 1) {
+            ribbon.pointAt(hold.start, flash.position);
+            flash.position.z = 60;
+            const size = Math.min(vw, vh) * 0.22;
+            flash.scale.set(size, size, 1);
+            flash.material.uniforms.uK.value = k;
+            flash.visible = true;
+          }
+        }
         const u = ribbon.mesh.material.uniforms;
-        u.uHead.value = head;
-        u.uTail.value = tail;
-        u.uTime.value = t;
-        ribbonGroup.position.y = scroll;
+        u.uReveal.value = hold ? revealOf(hold) : 0;
+        ribbon.update(head, tail, t);
+        // карточки, за которыми проходит лента: прямоугольники в пикселях буфера (ось Y вверх)
+        const dpr = renderer.getPixelRatio();
+        const occ = u.uOcc.value as THREE.Vector4[];
+        let n = 0;
+        document.querySelectorAll<HTMLElement>("[data-occlude]").forEach((el) => {
+          if (n >= occ.length) return;
+          const r = el.getBoundingClientRect();
+          if (r.bottom < 0 || r.top > vh || r.right < 0 || r.left > vw) return;
+          occ[n++].set(r.left * dpr, (vh - r.bottom) * dpr, r.right * dpr, (vh - r.top) * dpr);
+        });
+        u.uOccN.value = n;
+        u.uOccR.value = 24 * dpr;
+        // полотно, под которое заезжает лента
+        const sheet = document.querySelector<HTMLElement>("[data-sheet]");
+        const sr = sheet?.getBoundingClientRect();
+        (u.uSheet.value as THREE.Vector4).set(
+          sr ? sr.left * dpr : 0,
+          sr ? (vh - sr.bottom) * dpr : 0,
+          sr ? sr.right * dpr : 0,
+          sr ? (vh - sr.top) * dpr : 0,
+        );
+        u.uSheetR.value = 32 * dpr;
+        ribbonGroup.position.y = view;
+        heightGroup.position.y = view;
+        const ru = relief.material.uniforms;
+        (ru.uSheet.value as THREE.Vector4).copy(u.uSheet.value as THREE.Vector4);
+        ru.uSheetR.value = 32 * dpr;
+        ru.uH.value = ribbon.ridgeHeight * dpr;
+        ru.uDark.value = root.dataset.theme === "dark" ? 1 : 0;
       }
+      // рельеф считаем, только пока полотно на экране и под ним есть лента
+      const sheetEl = document.querySelector<HTMLElement>("[data-sheet]");
+      const sheetRect = sheetEl?.getBoundingClientRect();
+      relief.visible = !!(ribbon?.ridge && sheetRect && sheetRect.bottom > 0 && sheetRect.top < vh);
 
       // ── строки, которые съезжают вбок (как заголовки у lusion) ──
       document.querySelectorAll<HTMLElement>("[data-shift]").forEach((el) => {
@@ -310,7 +550,7 @@ export function PageGL({ ribbon: steps, children }: { ribbon: RibbonStep[]; chil
           for (let i = 0; i < s.length; i += 3) {
             if (s[i + 2] < tail || s[i + 2] > head) continue;
             const px = s[i] + vw / 2;
-            const py = vh / 2 - s[i + 1] - scroll;
+            const py = vh / 2 - s[i + 1] - view;
             const d = (px - cx) ** 2 + (py - cy) ** 2;
             if (d < best) {
               best = d;
@@ -343,8 +583,33 @@ export function PageGL({ ribbon: steps, children }: { ribbon: RibbonStep[]; chil
         s.mesh.visible = visible;
         if (!visible) continue;
         const n = s.entry.frames.length;
-        const target = idle ? 0.5 + Math.sin(t * 0.35) * 0.32 : pointer.x;
-        s.cur += (target * (n - 1) - s.cur) * 0.08;
+        const u = s.mesh.material.uniforms;
+        // связь с лентой: lo/hi — какая часть знака по ходу письма видна, lock — насколько знак
+        // развёрнут лицом к зрителю (контур ленты совпадает только с фронтальным кадром)
+        const g = ribbon?.sevens.get(s.entry.el.dataset.ribbon ?? "");
+        let lo = -1;
+        let hi = 2;
+        let lock = 0;
+        if (g?.lead) {
+          const p = clamp01((head - g.start) / (g.end - g.start || 1));
+          lo = p <= 0 ? -1 : p >= 1 ? 2 : p;
+          lock = clamp01(scroll / (vh * SEVEN_TURN * 0.8));
+        } else if (g) {
+          const rv = revealOf(g);
+          const cut = cutOf(g);
+          hi = rv <= 0 ? -1 : rv >= 1 ? 2 : rv;
+          // пока лента держится за знак, он строго фронтальный; отрезанный — снова живой
+          lock = 1 - 0.75 * easeOut(cut);
+          u.uFlash.value = cut > 0 ? Math.pow(1 - clamp01(cut / 0.5), 2) : 0;
+        }
+        u.uLo.value = lo;
+        u.uHi.value = hi;
+        u.uTime.value = t;
+        const cursor = idle ? 0.5 + Math.sin(t * 0.35) * 0.32 : pointer.x;
+        const target = cursor + (0.5 - cursor) * lock;
+        s.cur += (target * (n - 1) - s.cur) * (0.08 + 0.3 * lock);
+        // пока знак переходит в ленту, кадр строго фронтальный — иначе контуры разойдутся
+        if (lo > 0 || (hi > -1 && hi < 1.5)) s.cur = s.entry.initial;
         const idx = Math.max(0, Math.min(n - 1, Math.round(s.cur)));
         const img = s.entry.frames[idx];
         if (idx !== s.shown && img.complete && img.naturalWidth) {
@@ -352,10 +617,9 @@ export function PageGL({ ribbon: steps, children }: { ribbon: RibbonStep[]; chil
           s.tex.needsUpdate = true;
           s.shown = idx;
         }
-        const bob = Math.sin(t * 1.1) * r.height * 0.012;
+        const bob = Math.sin(t * 1.1) * r.height * 0.012 * (1 - lock);
         s.mesh.position.set(r.left + r.width / 2 - vw / 2, vh / 2 - (r.top + r.height / 2) + bob, 0);
         s.mesh.scale.set(r.width, r.height, 1);
-        const u = s.mesh.material.uniforms;
         u.uOpacity.value += ((s.shown >= 0 ? 1 : 0) - u.uOpacity.value) * 0.08;
       }
 
@@ -400,7 +664,7 @@ export function PageGL({ ribbon: steps, children }: { ribbon: RibbonStep[]; chil
           // точка касания ленты в координатах карточки
           const s = ribbon.samples;
           const i = Math.min(s.length / 3 - 1, Math.round((dip / (s[s.length - 1] || 1)) * (s.length / 3 - 1)));
-          tmp.set((s[i * 3] + vw / 2 - ra.left) / ra.width, 1 - (vh / 2 - s[i * 3 + 1] - scroll - ra.top) / ra.height);
+          tmp.set((s[i * 3] + vw / 2 - ra.left) / ra.width, 1 - (vh / 2 - s[i * 3 + 1] - view - ra.top) / ra.height);
           u.uOrigin.value.copy(tmp);
         }
         const v = m.entry.video;
@@ -408,6 +672,11 @@ export function PageGL({ ribbon: steps, children }: { ribbon: RibbonStep[]; chil
         if (v.paused && v.readyState >= 2) v.play().catch(() => {});
       }
 
+      if (relief.visible) {
+        renderer.setRenderTarget(heightTarget);
+        renderer.render(heightScene, camera);
+        renderer.setRenderTarget(null);
+      }
       renderer.render(scene, camera);
     };
     raf = requestAnimationFrame(tick);
@@ -419,6 +688,11 @@ export function PageGL({ ribbon: steps, children }: { ribbon: RibbonStep[]; chil
       window.removeEventListener("pointermove", onPointer);
       ro.disconnect();
       ribbon?.dispose();
+      flash.geometry.dispose();
+      flash.material.dispose();
+      relief.geometry.dispose();
+      relief.material.dispose();
+      heightTarget.dispose();
       for (const s of seqs.values()) {
         s.mesh.geometry.dispose();
         s.mesh.material.dispose();

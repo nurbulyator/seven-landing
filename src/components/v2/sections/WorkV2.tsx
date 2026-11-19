@@ -21,7 +21,7 @@ export function WorkV2() {
           {workV2.items.map((item) => {
             const Screen = screens[item.screen];
             return (
-              <li key={item.screen} className="group reveal">
+              <li key={item.screen} data-occlude className="group reveal">
                 <div
                   className="ui-card relative aspect-[4/3] w-full overflow-hidden rounded-[24px]"
                   style={{ background: item.backdrop }}

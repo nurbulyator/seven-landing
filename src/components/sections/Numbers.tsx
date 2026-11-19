@@ -5,8 +5,11 @@ import { useCallback, useRef } from "react";
 import { numbers } from "@/content/site";
 import { useScrollProgress } from "@/lib/scroll";
 
-/** Цифры компании сменяют друг друга на закреплённом экране, как характеристики на страницах Apple. */
-export function Numbers() {
+/**
+ * Цифры компании сменяют друг друга на закреплённом экране, как характеристики на страницах Apple.
+ * sheet — вариант для /v2: цифры лежат на «полотне» [data-sheet], под которым ползает лента.
+ */
+export function Numbers({ sheet = false }: { sheet?: boolean }) {
   const sectionRef = useRef<HTMLElement>(null);
   const itemRefs = useRef<(HTMLDivElement | null)[]>([]);
   const dotRefs = useRef<(HTMLSpanElement | null)[]>([]);
@@ -28,8 +31,15 @@ export function Numbers() {
   useScrollProgress(sectionRef, onProgress);
 
   return (
-    <section id="about" ref={sectionRef} data-ribbon="numbers" className="relative h-[480svh] bg-bg-2">
-      <div className="sticky top-0 flex h-svh flex-col items-center justify-center overflow-hidden px-5">
+    <section id="about" ref={sectionRef} data-ribbon="numbers" data-pin className={`relative h-[480svh] ${sheet ? "" : "bg-bg-2"}`}>
+      <div data-ribbon="numbers-stage" className="sticky top-0 flex h-svh flex-col items-center justify-center overflow-hidden px-5">
+        {sheet && (
+          <div
+            data-sheet
+            aria-hidden
+            className="absolute inset-x-2.5 top-[calc(max(6rem,14svh)-2.75rem)] bottom-[3svh] rounded-[2rem] bg-bg-2 shadow-[0_1px_0_var(--line),0_30px_80px_-40px_var(--shadow)] sm:inset-x-4"
+          />
+        )}
         <p className="absolute top-[max(6rem,14svh)] text-[1rem] font-medium text-muted">Seven Hills в цифрах</p>
         <div className="relative h-[clamp(13rem,40svh,24rem)] w-full max-w-[60rem]">
           {numbers.map((n, i) => (

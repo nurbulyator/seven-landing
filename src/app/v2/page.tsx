@@ -27,7 +27,7 @@ export default function V2Page() {
         <HeroV2 />
         <IntroV2 />
         <ReelV2 />
-        <Numbers />
+        <Numbers sheet />
         <WorkV2 />
         <DirectionsV2 />
         <FactsV2 />

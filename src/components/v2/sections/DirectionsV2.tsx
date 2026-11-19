@@ -25,8 +25,8 @@ export function DirectionsV2() {
   useScrollProgress(ref, onProgress);
 
   return (
-    <section id="directions" ref={ref} data-ribbon="directions" className="relative h-[420svh]">
-      <div className="sticky top-0 flex h-svh flex-col justify-center overflow-hidden">
+    <section id="directions" ref={ref} data-ribbon="directions" data-pin className="relative h-[420svh]">
+      <div data-ribbon="directions-stage" className="sticky top-0 flex h-svh flex-col justify-center overflow-hidden">
         <div className="mx-auto mb-8 flex w-full max-w-[90rem] flex-wrap items-end justify-between gap-4 px-5 sm:px-8 lg:mb-12">
           <h2 className="text-[clamp(2.6rem,6.6vw,6.4rem)] leading-[0.95] font-semibold tracking-[-0.045em]">{directionsV2.title}</h2>
           <p className="max-w-[20rem] text-[1.05rem] text-muted">{directionsV2.lead}</p>
@@ -35,6 +35,7 @@ export function DirectionsV2() {
           {directionsV2.list.map((d, i) => (
             <article
               key={d.id}
+              data-occlude={i % 2 === 0 || undefined}
               className="flex h-[min(58svh,32rem)] w-[min(78vw,26rem)] shrink-0 flex-col justify-between rounded-[24px] bg-card p-6 shadow-[0_1px_0_var(--line),0_24px_50px_-34px_var(--shadow)] sm:p-8"
             >
               <div className="flex items-start justify-between">

@@ -1,17 +1,17 @@
 "use client";
 
-import { useEffect, useRef, useSyncExternalStore } from "react";
+import { useSyncExternalStore } from "react";
 
 import { useTheme } from "@/components/ThemeToggle";
-import { usePageGL } from "@/components/v2/gl/PageGL";
 import { FluidCanvas } from "@/components/v2/hero/FluidCanvas";
 import { ReliefCanvas } from "@/components/v2/hero/ReliefCanvas";
+import { SevenFrames } from "@/components/v2/SevenFrames";
 import { heroV2 } from "@/content/v2";
 
 /**
- * Первый экран /v2. По умолчанию — объёмный знак «7» (кадры Blender, поворачивается за курсором),
- * вокруг которого проходит лента. «Поток» и «Рельеф» оставлены как альтернативы в переключателе;
- * версия хранится в адресе (#hero-flow), чтобы ссылкой можно было показать конкретную.
+ * Первый экран /v2. По умолчанию — объёмный знак «7» (кадры Blender, поворачивается за курсором);
+ * с первым движением колеса он растворяется и «переливается» в ленту, которая уходит вниз по странице.
+ * «Поток» и «Рельеф» оставлены как альтернативы в переключателе; версия хранится в адресе (#hero-flow), чтобы ссылкой можно было показать конкретную.
  */
 const variants = [
   { key: "seven", label: "Знак" },
@@ -38,41 +38,6 @@ function setVariant(v: Variant) {
   listeners.forEach((l) => l());
 }
 
-const FRAMES = 61;
-const frameSrc = (i: number) => `/v2/seven/${String(i + 1).padStart(2, "0")}.webp`;
-
-/** Знак «7»: место в вёрстке и запасная картинка; сам знак рисует PageGL. */
-function SevenObject() {
-  const ref = useRef<HTMLDivElement>(null);
-  const gl = usePageGL();
-  useEffect(() => {
-    const el = ref.current;
-    if (!el || !gl) return;
-    const frames = Array.from({ length: FRAMES }, () => new Image());
-    // сначала центральный кадр, затем к краям — знак появляется сразу
-    const mid = Math.floor(FRAMES / 2);
-    const order = [mid, ...Array.from({ length: mid }, (_, k) => [mid - k - 1, mid + k + 1]).flat()].filter(
-      (i) => i >= 0 && i < FRAMES,
-    );
-    order.forEach((i) => {
-      frames[i].decoding = "async";
-      frames[i].src = frameSrc(i);
-    });
-    return gl.seq({ el, frames, initial: mid });
-  }, [gl]);
-
-  return (
-    <div
-      ref={ref}
-      data-ribbon="seven-hero"
-      className="pointer-events-none absolute top-1/2 right-[2%] aspect-square w-[min(62vw,78svh)] -translate-y-[46%] max-lg:right-1/2 max-lg:w-[min(72vw,40svh)] max-lg:translate-x-1/2 max-lg:-translate-y-[92%]"
-    >
-      {/* eslint-disable-next-line @next/next/no-img-element -- кадр Blender с прозрачностью, оптимизация Next не нужна */}
-      <img src={frameSrc(Math.floor(FRAMES / 2))} alt="" className="gl-hide h-full w-full object-contain" />
-    </div>
-  );
-}
-
 export function HeroV2() {
   const variant = useSyncExternalStore<Variant>(subscribe, readVariant, () => "seven");
   const theme = useTheme();
@@ -88,7 +53,12 @@ export function HeroV2() {
             : "bg-[radial-gradient(120%_90%_at_70%_40%,#ffffff_0%,#e4eaea_70%)]"
         }`}
       >
-        {variant === "seven" && <SevenObject />}
+        {variant === "seven" && (
+          <SevenFrames
+            ribbonKey="seven-hero"
+            className="absolute top-1/2 right-[2%] w-[min(62vw,78svh)] -translate-y-[46%] max-lg:right-1/2 max-lg:w-[min(72vw,40svh)] max-lg:translate-x-1/2 max-lg:-translate-y-[92%]"
+          />
+        )}
         {variant === "flow" && <FluidCanvas />}
         {variant === "relief" && <ReliefCanvas dark={theme === "dark"} />}
 
