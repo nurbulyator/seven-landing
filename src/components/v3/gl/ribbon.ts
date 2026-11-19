@@ -876,7 +876,10 @@ export function buildRibbon(steps: RibbonStep[], vw: number, vh: number, radius:
         const tx = tan.x / tl;
         const ty = tan.y / tl;
         const edge = Math.min(1, Math.min(s - r.a, r.b - s) / W);
-        const flat = fs[i];
+        // у концов участка (там, где лента ныряет под полотно и выходит) — настоящая скрутка без
+        // сглаживания: ширина следа на краю полотна та же, что у ленты в этой точке
+        const mEnd = Math.min(1, Math.min(s - r.a, r.b - s) / (W * 3));
+        const flat = fl[i] * (1 - mEnd) + fs[i] * mEnd;
         const k = ks[i];
         for (const v of [-1, 1]) {
           const inner = Math.sign(k) === v;
