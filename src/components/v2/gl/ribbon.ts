@@ -1,5 +1,7 @@
 import * as THREE from "three";
 
+import type { RibbonStyle } from "@/components/v2/ribbonStyle";
+
 /**
  * Лента — объёмная трубка, которая «ползёт» по странице за прокруткой, как змейка:
  * голова идёт по маршруту, хвост тянется следом. Маршрут задаётся шагами, привязанными
@@ -105,6 +107,8 @@ type Resolved = {
   id?: string;
   seven?: string;
   lead?: number;
+  /** половина толщины грани объёмного знака «7», px */
+  bar?: number;
 };
 
 function resolve(steps: RibbonStep[], vw: number, vh: number, pins: Pin[]): Resolved[] {
@@ -145,7 +149,8 @@ function resolve(steps: RibbonStep[], vw: number, vh: number, pins: Pin[]): Reso
       const r = rectOf(step.seven, pins);
       if (!r) continue;
       const pts = SEVEN_FRAME_STROKE;
-      const mark = { seven: step.seven, lead: step.lead, pin: r.pin, layer: 0 as const };
+      // грань внешней бирюзовой «7» на кадре — 32 px из 1200
+      const mark = { seven: step.seven, lead: step.lead, pin: r.pin, layer: 0 as const, bar: (16 / 1200) * r.w };
       const at = (fx: number, fy: number) => ({ p: toGL(r.x + fx * r.w, r.y + fy * r.h, 30), realY: r.realY + fy * r.h, ...mark });
       // у каждого угла две близкие точки — сплайн проходит угол туго, а не «срезает» его
       out.push(at(pts[0][0], pts[0][1]));
@@ -162,26 +167,21 @@ function resolve(steps: RibbonStep[], vw: number, vh: number, pins: Pin[]): Reso
 }
 
 /**
- * Толщина трубки в финальном знаке, пока он проявляется (1 — полная, 0 — трубки нет).
- * Фронт истончения идёт чуть позади фронта проявления знака (uReveal), поэтому трубка
- * перекрывает место, где знак только появляется, — без разрыва между ними.
+ * Толщина ленты в финальном знаке, пока поверх неё проступает объёмный знак (1 — полная,
+ * 0 — ленты нет). Знак проявляется целиком (PageGL), и, когда он уже почти непрозрачный,
+ * лента под ним сходит на нет — её края прячутся под гранями знака.
  */
 const REVEAL_TAPER = /* glsl */ `
   float revealTaper(float s, vec2 fade, float reveal) {
-    if (reveal <= 0.0) return 1.0;
-    float q = (s - fade.x) / max(fade.y - fade.x, 1.0);
-    if (q < 0.0 || q > 1.0) return 1.0;
-    float r = reveal * 1.2;
-    return smoothstep(r - 0.16, r - 0.02, q);
+    // первые 24 px знака лента не трогается: её срез прячется под гранью крючка
+    if (reveal <= 0.0 || s < fade.x + 24.0 || s > fade.y) return 1.0;
+    return 1.0 - smoothstep(0.55, 1.0, reveal);
   }
 `;
 const revealTaper = (s: number, fade: THREE.Vector2, reveal: number) => {
-  if (reveal <= 0) return 1;
-  const q = (s - fade.x) / Math.max(fade.y - fade.x, 1);
-  if (q < 0 || q > 1) return 1;
-  const r = reveal * 1.2;
-  const t = Math.min(1, Math.max(0, (q - (r - 0.16)) / 0.14));
-  return t * t * (3 - 2 * t);
+  if (reveal <= 0 || s < fade.x + 24 || s > fade.y) return 1;
+  const t = Math.min(1, Math.max(0, (reveal - 0.55) / 0.45));
+  return 1 - t * t * (3 - 2 * t);
 };
 
 /** «Дыхание» ленты — то же смещение, что в шейдере, чтобы торцы и бугорок шли вместе с трубкой. */
@@ -193,23 +193,51 @@ const breath = (s: number, t: number) => [Math.sin(s * 0.004 + t * 0.9) * 3.5, M
 const vertex = /* glsl */ `
   attribute float aS;
   attribute float aL;
+  attribute float aW;   // толщина: в знаке «7» — как его грань, после — плавно до полной
+  attribute float aK;   // «внутри знака»: 1 — в «7», плавно до 0 на подходе/выходе
   attribute vec3 aCenter;
+  attribute vec3 aN;    // поперечные оси трубки (кадр Френе)
+  attribute vec3 aB;
   uniform float uTime;
   uniform vec2 uFade;
   uniform float uReveal;
+  uniform float uBand;  // 1 — плоская перекрученная лента вместо трубки
+  uniform float uHead;
+  uniform float uTail;
+  uniform float uRadius;
   varying vec3 vN;
   varying float vS;
   varying float vL;
+  varying float vFace;
   ${BREATH}
   ${REVEAL_TAPER}
   void main() {
     vec3 off = position - aCenter;
+    float r = length(off);
+    vec3 dir = off / max(r, 1e-5);
+    // плоская лента: сечение — вытянутый эллипс, который плавно перекручивается вдоль пути
+    float cs = dot(dir, aN);
+    float sn = dot(dir, aB);
+    float phi = aS * 0.0045;
+    vec3 n2 = cos(phi) * aN + sin(phi) * aB;
+    vec3 b2 = -sin(phi) * aN + cos(phi) * aB;
+    // в знаке плоская лента не шире его грани, вне знака — почти вдвое шире трубки
+    float wide = mix(1.9, 1.0, aK);
+    vec3 bandOff = r * (cs * wide * n2 + sn * 0.2 * b2);
+    vec3 bandN = normalize(cs / wide * n2 + sn / 0.2 * b2);
+    // концы плоской ленты скруглены (в плане — полукруг), а не обрезаны: иначе видна изнанка
+    float toEnd = min(uHead - aS, aS - max(uTail, 0.0)) / max(uRadius * wide * aW, 1.0);
+    float tip = sqrt(clamp(1.0 - pow(1.0 - clamp(toEnd, 0.0, 1.0), 2.0), 0.0, 1.0));
+    bandOff *= tip;
+    vec3 o = mix(off, bandOff, uBand);
+    vec3 nrm = normalize(mix(dir, bandN, uBand));
     // в финальном знаке трубка истончается и «втекает» в проявляющийся объёмный знак
-    vec3 p = aCenter + off * revealTaper(aS, uFade, uReveal);
+    vec3 p = aCenter + o * aW * revealTaper(aS, uFade, uReveal);
     p.xy += breath(aS, uTime);
-    vN = normalize(normalMatrix * normalize(off));
+    vN = normalize(normalMatrix * nrm);
     vS = aS;
     vL = aL;
+    vFace = sn;
     gl_Position = projectionMatrix * modelViewMatrix * vec4(p, 1.0);
   }
 `;
@@ -223,10 +251,12 @@ const capVertex = /* glsl */ `
   varying vec3 vN;
   varying float vS;
   varying float vL;
+  varying float vFace;
   void main() {
     vN = normalize(normalMatrix * normal);
     vS = uCapS;
     vL = uCapL;
+    vFace = 1.0;
     gl_Position = projectionMatrix * modelViewMatrix * vec4(uCapC + position * uCapR, 1.0);
   }
 `;
@@ -243,9 +273,11 @@ const fragment = /* glsl */ `
   uniform float uOccR;
   uniform vec4 uSheet;   // полотно, под которым идёт лента (пиксели буфера)
   uniform float uSheetR;
+  uniform float uStyle;  // 0 — глянец, 1 — металл, 2 — стекло, 3 — плоская лента
   varying vec3 vN;
   varying float vS;
   varying float vL;
+  varying float vFace;
   float sdBox(vec2 p, vec4 r, float rad) {
     vec2 q = abs(p - (r.xy + r.zw) * 0.5) - (r.zw - r.xy) * 0.5 + rad;
     return length(max(q, 0.0)) + min(max(q.x, q.y), 0.0) - rad;
@@ -272,10 +304,32 @@ const fragment = /* glsl */ `
     float spec = pow(max(dot(n, normalize(L + vec3(0.0, 0.0, 1.0))), 0.0), 48.0);
     float rim = pow(1.0 - max(n.z, 0.0), 2.5);
     vec3 base = mix(uColorA, uColorB, 0.5 + 0.5 * sin(vS * 0.0012));
-    vec3 col = base * (0.42 + 0.7 * diff) + vec3(spec) * 0.75 + base * rim * 0.35;
-    // там, где трубка вот-вот перейдёт в знак, — светлая кромка
-    if (uReveal > 0.0 && q >= 0.0 && q <= 1.0) col += vec3(0.35, 0.6, 0.6) * (1.0 - revealTaper(vS, uFade, uReveal));
-    gl_FragColor = vec4(col, 1.0);
+    vec3 col;
+    float alpha = 1.0;
+    if (uStyle < 0.5) {
+      // глянец: бирюзовый пластик с бликом
+      col = base * (0.42 + 0.7 * diff) + vec3(spec) * 0.75 + base * rim * 0.35;
+    } else if (uStyle < 1.5) {
+      // металл — как объёмный знак: тёмная бирюза, отражает светлое «небо» и тёмный «пол»,
+      // яркая полоса горизонта и боковой софтбокс, края уходят в серебро
+      vec3 R = reflect(vec3(0.0, 0.0, -1.0), n);
+      float sky = smoothstep(-0.35, 0.75, R.y);
+      float strip = exp(-pow((R.y - 0.18) / 0.08, 2.0)) + 0.6 * exp(-pow((R.x + 0.4) / 0.1, 2.0)) * smoothstep(-0.2, 0.5, R.y);
+      col = vec3(0.0, 0.5, 0.53) * (0.3 + 0.6 * sky) + vec3(0.85, 1.0, 1.0) * strip * 0.6 + vec3(spec);
+      col = mix(col, vec3(0.8, 0.88, 0.9), rim * 0.5);
+    } else if (uStyle < 2.5) {
+      // стекло: прозрачная середина со светящейся сердцевиной, плотные бирюзовые края
+      float core = pow(max(n.z, 0.0), 10.0);
+      vec3 deep = vec3(0.0, 0.52, 0.57);
+      vec3 pre = vec3(0.3, 0.95, 1.0) * core * 0.85 + vec3(spec) * 0.95 + deep * rim * 1.1 + base * 0.2;
+      alpha = clamp(0.3 + rim * 0.75 + core * 0.55 + spec, 0.0, 1.0);
+      col = pre / max(alpha, 0.05);
+    } else {
+      // плоская лента: две стороны разного цвета, матовый блеск
+      vec3 side = vFace >= 0.0 ? base : vec3(0.84, 0.96, 0.97);
+      col = side * (0.38 + 0.72 * diff) + vec3(spec) * 0.45;
+    }
+    gl_FragColor = vec4(col, alpha);
   }
 `;
 
@@ -332,8 +386,8 @@ const ridgeFragment = /* glsl */ `
 
 /**
  * Знак «7» на маршруте: участок дуги [start, end], стартовый ли он, и прокрутки сюжета:
- * doneAt — голова дописала контур; revealEnd — объёмный знак проявился целиком;
- * [cutStart, cutEnd] — кусок ленты, что ведёт в знак, обрезается (только у финального).
+ * doneAt — голова дописала контур; revealEnd — объёмный знак проступил поверх ленты целиком;
+ * [retractStart, retractEnd] — лента выходит из-под крючка и уползает назад вверх (финальный).
  */
 export type SevenInfo = {
   start: number;
@@ -341,8 +395,8 @@ export type SevenInfo = {
   lead: boolean;
   doneAt: number;
   revealEnd: number;
-  cutStart: number;
-  cutEnd: number;
+  retractStart: number;
+  retractEnd: number;
 };
 
 export type Ribbon = {
@@ -352,6 +406,8 @@ export type Ribbon = {
   tailFor(head: number, vh: number): number;
   /** выставить голову, хвост и время: трубка, торцы и бугорок (uReveal выставляется до вызова) */
   update(head: number, tail: number, time: number): void;
+  /** вид ленты */
+  setStyle(style: RibbonStyle): void;
   /** полоса бугорка для прохода карты высоты (null — участков под полотном нет) и его высота, px */
   ridge: THREE.Mesh | null;
   ridgeHeight: number;
@@ -427,7 +483,7 @@ export function buildRibbon(steps: RibbonStep[], vw: number, vh: number, radius:
   const under = ranges.filter((r) => r.layer === 1);
   const layerAt = (s: number) => ranges.find((r) => s >= r.a && s <= r.b)?.layer ?? 0;
 
-  const sevens = new Map<string, SevenInfo & { i0: number; i1: number; pin: number }>();
+  const sevens = new Map<string, SevenInfo & { i0: number; i1: number; pin: number; bar: number }>();
   pts.forEach((r, i) => {
     if (!r.seven) return;
     const g = sevens.get(r.seven);
@@ -436,15 +492,28 @@ export function buildRibbon(steps: RibbonStep[], vw: number, vh: number, radius:
       g.i1 = i;
     } else {
       const lead = r.lead !== undefined;
-      sevens.set(r.seven, { start: S[i], end: S[i], lead, doneAt: 0, revealEnd: 0, cutStart: Infinity, cutEnd: Infinity, i0: i, i1: i, pin: r.pin });
+      sevens.set(r.seven, {
+        start: S[i],
+        end: S[i],
+        lead,
+        doneAt: 0,
+        revealEnd: 0,
+        retractStart: Infinity,
+        retractEnd: Infinity,
+        i0: i,
+        i1: i,
+        pin: r.pin,
+        bar: r.bar ?? radius,
+      });
     }
   });
 
   // Расписание головы. Обычная точка: голова доходит до неё, когда точка на 62% высоты экрана.
   // На петлях даём немного прокрутки на виток, но отставание не копим. Знаки «7» голова проходит
   // равномерно по длине в своём окне прокрутки: стартовый — с первого движения колеса
-  // (от SEVEN_TURN·vh до lead·vh), финальный — пока его сцена закреплена (контур → проявление
-  // объёмного знака → обрезка ленты → тишина) или, без паузы, пока знак в середине экрана.
+  // (от SEVEN_TURN·vh до lead·vh), финальный — пока его сцена закреплена (контур → объёмный
+  // знак проступает поверх ленты → лента уползает назад вверх) или, без паузы, пока знак
+  // в середине экрана.
   // Точки внутри паузы без знака голова проходит равномерно, пока сцена стоит.
   const T: number[] = [];
   const windows = new Map<string, [number, number]>();
@@ -499,9 +568,9 @@ export function buildRibbon(steps: RibbonStep[], vw: number, vh: number, radius:
     if (g.lead) continue;
     const pin = pins[g.pin];
     if (pin) {
-      g.revealEnd = pin.start + pin.len * 0.55;
-      g.cutStart = pin.start + pin.len * 0.62;
-      g.cutEnd = pin.start + pin.len * 0.86;
+      g.revealEnd = pin.start + pin.len * 0.6;
+      g.retractStart = pin.start + pin.len * 0.62;
+      g.retractEnd = pin.start + pin.len * 0.92;
     } else g.revealEnd = g.doneAt + vh * 0.22;
   }
   const marks = new Map<string, number>();
@@ -510,6 +579,36 @@ export function buildRibbon(steps: RibbonStep[], vw: number, vh: number, radius:
   const hold = [...sevens.values()].find((g) => !g.lead);
   const sevenStart = hold ? hold.start : null;
 
+  // Толщина ленты: в знаке «7» — ровно как его грань, чтобы трубка ложилась на знак
+  // и казалась им самим; дальше по ходу (у финального — до него) плавно до полной.
+  const RAMP = 280;
+  const sevenWidths = [...sevens.values()].map((g) => ({ a: g.start, b: g.end, lead: g.lead, w: Math.min(1, Math.max(0.3, g.bar / radius)) }));
+  const smoothT = (t: number) => {
+    const x = Math.min(1, Math.max(0, t));
+    return x * x * (3 - 2 * x);
+  };
+  // «внутри знака»: 1 — в «7», плавно до 0 на выходе (стартовый) или на подходе (финальный)
+  const sevenAt = (s: number) => {
+    let k = 0;
+    for (const g of sevenWidths) {
+      if (s >= g.a && s <= g.b) k = 1;
+      else if (g.lead && s > g.b) k = Math.max(k, 1 - smoothT((s - g.b) / RAMP));
+      else if (!g.lead && s < g.a) k = Math.max(k, 1 - smoothT((g.a - s) / RAMP));
+    }
+    return k;
+  };
+  const widthAt = (s: number) => {
+    let w = 1;
+    for (const g of sevenWidths) {
+      let k = 1;
+      if (s >= g.a && s <= g.b) k = g.w;
+      else if (g.lead && s > g.b) k = g.w + (1 - g.w) * smoothT((s - g.b) / RAMP);
+      else if (!g.lead && s < g.a) k = g.w + (1 - g.w) * smoothT((g.a - s) / RAMP);
+      w = Math.min(w, k);
+    }
+    return w;
+  };
+
   // ── трубка ──
   const segments = Math.min(9000, Math.max(64, Math.round(total / 6)));
   const radial = 14;
@@ -517,22 +616,38 @@ export function buildRibbon(steps: RibbonStep[], vw: number, vh: number, radius:
   const count = tube.attributes.position.count;
   const aS = new Float32Array(count);
   const aL = new Float32Array(count);
+  const aW = new Float32Array(count);
+  const aK = new Float32Array(count);
   const aCenter = new Float32Array(count * 3);
+  const aN = new Float32Array(count * 3);
+  const aB = new Float32Array(count * 3);
   const c = new THREE.Vector3();
   for (let i = 0; i <= segments; i++) {
     curve.getPointAt(i / segments, c);
     const s = (i / segments) * total;
     const l = layerAt(s);
+    const w = widthAt(s);
+    const k7 = sevenAt(s);
+    const nn = tube.normals[i];
+    const bb = tube.binormals[i];
     for (let j = 0; j <= radial; j++) {
       const k = i * (radial + 1) + j;
       aS[k] = s;
       aL[k] = l;
+      aW[k] = w;
+      aK[k] = k7;
       aCenter.set([c.x, c.y, c.z], k * 3);
+      aN.set([nn.x, nn.y, nn.z], k * 3);
+      aB.set([bb.x, bb.y, bb.z], k * 3);
     }
   }
   tube.setAttribute("aS", new THREE.BufferAttribute(aS, 1));
   tube.setAttribute("aL", new THREE.BufferAttribute(aL, 1));
+  tube.setAttribute("aW", new THREE.BufferAttribute(aW, 1));
+  tube.setAttribute("aK", new THREE.BufferAttribute(aK, 1));
   tube.setAttribute("aCenter", new THREE.BufferAttribute(aCenter, 3));
+  tube.setAttribute("aN", new THREE.BufferAttribute(aN, 3));
+  tube.setAttribute("aB", new THREE.BufferAttribute(aB, 3));
 
   const occ = Array.from({ length: 16 }, () => new THREE.Vector4());
   const material = new THREE.ShaderMaterial({
@@ -549,6 +664,9 @@ export function buildRibbon(steps: RibbonStep[], vw: number, vh: number, radius:
       uOccR: { value: 24 },
       uSheet: { value: new THREE.Vector4(0, 0, 0, 0) },
       uSheetR: { value: 32 },
+      uStyle: { value: 0 },
+      uBand: { value: 0 },
+      uRadius: { value: radius },
       uColorA: { value: new THREE.Color() },
       uColorB: { value: new THREE.Color() },
     },
@@ -659,7 +777,15 @@ export function buildRibbon(steps: RibbonStep[], vw: number, vh: number, radius:
     sevens: new Map(
       [...sevens].map(([k, g]) => [
         k,
-        { start: g.start, end: g.end, lead: g.lead, doneAt: g.doneAt, revealEnd: g.revealEnd, cutStart: g.cutStart, cutEnd: g.cutEnd },
+        {
+          start: g.start,
+          end: g.end,
+          lead: g.lead,
+          doneAt: g.doneAt,
+          revealEnd: g.revealEnd,
+          retractStart: g.retractStart,
+          retractEnd: g.retractEnd,
+        },
       ]),
     ),
     view(scroll) {
@@ -698,8 +824,9 @@ export function buildRibbon(steps: RibbonStep[], vw: number, vh: number, radius:
       const ends = [hi, lo];
       caps.forEach((cap, i) => {
         const s = ends[i];
-        const w = grow * revealTaper(s, u.uFade.value as THREE.Vector2, u.uReveal.value as number);
-        cap.visible = w > 0.05;
+        const w = grow * widthAt(s) * revealTaper(s, u.uFade.value as THREE.Vector2, u.uReveal.value as number);
+        // у плоской ленты торцы срезаны ровно — шары на концах ей не нужны
+        cap.visible = w > 0.05 && u.uBand.value < 0.5;
         if (!cap.visible) return;
         curve.getPointAt(s / total, capPos);
         const [bx, by] = breath(s, time);
@@ -710,6 +837,18 @@ export function buildRibbon(steps: RibbonStep[], vw: number, vh: number, radius:
         cu.uCapS.value = i === 0 ? hi - 0.01 : lo + 0.01;
         cu.uCapL.value = layerAt(s);
       });
+    },
+    setStyle(style) {
+      const code = { gloss: 0, metal: 1, glass: 2, band: 3 }[style];
+      const glass = style === "glass";
+      for (const m of [material, ...caps.map((cap) => cap.material)]) {
+        m.uniforms.uStyle.value = code;
+        if (m.transparent !== glass) {
+          m.transparent = glass;
+          m.needsUpdate = true;
+        }
+      }
+      material.uniforms.uBand.value = style === "band" ? 1 : 0;
     },
     dispose() {
       tube.dispose();

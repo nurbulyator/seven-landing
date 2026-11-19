@@ -11,6 +11,7 @@ import {
   type RibbonStep,
   type SevenInfo,
 } from "@/components/v2/gl/ribbon";
+import { getRibbonStyle, type RibbonStyle } from "@/components/v2/ribbonStyle";
 
 /**
  * Единый WebGL-слой /v2 поверх страницы (фиксированный холст, камера в пикселях экрана).
@@ -18,8 +19,8 @@ import {
  *  - лента, ползущая за прокруткой (ribbon.ts);
  *  - знаки «7» из кадров Blender: поворачиваются за курсором, а на краях маршрута «переливаются»
  *    в ленту — стартовый растворяется вдоль линии письма следом за головой ленты, финальный
- *    проявляется по контуру, который лента только что выписала, и трубка уходит в него,
- *    после чего ведущий к знаку кусок ленты обрезается со вспышкой на стыке;
+ *    проступает поверх ленты, которая его только что выписала, лента под ним сходит на нет,
+ *    а затем выходит из-под крючка и уползает назад вверх;
  *  - карточка-«морф»: маленькая карточка, которую лента заливает цветом, а затем
  *    вытягивает в большой ролик — углы летят с разной задержкой, края выгибаются.
  * Плюс DOM-эффекты: строки с data-shift съезжают по горизонтали, слова с data-push
@@ -50,7 +51,7 @@ const seqFragment = /* glsl */ `
   uniform float uLo;    // всё, что раньше uLo по линии письма, уже стало лентой (растворилось)
   uniform float uHi;    // всё, что дальше uHi, ещё не проявилось из ленты
   uniform float uTime;
-  uniform float uFlash; // вспышка в начале линии письма — там, где обрезается лента
+  uniform float uAlpha; // общая прозрачность: финальный знак проступает поверх ленты
   varying vec2 vUv;
   float hash(vec2 p) { return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
   float noise(vec2 p) {
@@ -60,7 +61,7 @@ const seqFragment = /* glsl */ `
   }
   void main() {
     vec2 uv = vUv;
-    float flash = uFlash * (1.0 - smoothstep(0.0, 0.16, distance(uv, uP[0])));
+    if (uAlpha < 0.005) discard;
     if (uLo > 0.0 || uHi < 1.5) {
       // ближайшая точка осевой линии и её место по ходу письма
       float best = 1e9, q = 0.0;
@@ -72,41 +73,35 @@ const seqFragment = /* glsl */ `
         float d = distance(uv, c);
         if (d < best) { best = d; q = mix(uQ[i], uQ[i + 1], t); near = c; }
       }
-      float n = (noise(uv * 22.0 + uTime * 0.6) - 0.5) * 0.07;
-      // растворяясь, знак сначала теряет края, а ось уходит последней — будто втягивается в ленту;
-      // проявляясь — наоборот, растёт от ленты наружу
-      float e = min(q + n - best * 0.9 - uLo, uHi - (q + n + best * 0.9));
+      vec4 c0 = texture2D(uTex, uv);
+      if (c0.a < 0.35) discard;
+      // внутренняя серебряная «7» (всё, что дальше грани от оси внешней) не режется
+      // по линии письма, а тает целиком: исчезает в начале перехода, проявляется в конце
+      if (best > 0.035) {
+        float vis = (uLo > 0.0 ? 1.0 - smoothstep(0.0, 0.35, uLo) : 1.0) * (uHi < 1.5 ? smoothstep(0.55, 0.95, uHi) : 1.0);
+        if (vis < 0.01) discard;
+        gl_FragColor = vec4(c0.rgb, 1.0) * uOpacity * vis;
+        return;
+      }
+      // внешняя «7» уходит ровно под голову ленты: тонкий рваный край и светлая кромка,
+      // будто знак «перетекает» в трубку, а не рассыпается
+      float n = (noise(uv * 26.0 + uTime * 0.6) - 0.5) * 0.025;
+      float e = min(q + n - best * 0.35 - uLo, uHi - (q + n + best * 0.35));
       if (e < 0.0) discard;
-      float melt = 1.0 - smoothstep(0.0, 0.08, e);
-      uv = mix(uv, near, melt * 0.3);
+      float melt = 1.0 - smoothstep(0.0, 0.05, e);
+      uv = mix(uv, near, melt * 0.15);
       vec4 c = texture2D(uTex, uv);
       if (c.a < 0.35) discard;
-      vec3 col = mix(c.rgb, vec3(0.25, 0.86, 0.9), melt * 0.85);
+      vec3 col = c.rgb + vec3(0.55, 0.9, 0.95) * melt * 0.55;
       gl_FragColor = vec4(col, 1.0) * uOpacity;
       return;
     }
     vec4 c = texture2D(uTex, uv);
     if (c.a < 0.35) discard; // прозрачные места не пишут глубину — лента за знаком видна
-    gl_FragColor = vec4(c.rgb + vec3(0.45, 0.95, 1.0) * flash, 1.0) * uOpacity;
+    gl_FragColor = vec4(c.rgb, 1.0) * uOpacity * uAlpha;
   }
 `;
 
-// вспышка на стыке: кольцо разбегается, ядро гаснет (поверх всего; холст прозрачный,
-// поэтому яркость идёт в альфу, а не в чёрный фон)
-const flashVertex = seqVertex;
-const flashFragment = /* glsl */ `
-  uniform float uK;
-  varying vec2 vUv;
-  void main() {
-    float d = length(vUv - 0.5) * 2.0;
-    float ring = exp(-pow((d - mix(0.08, 0.95, sqrt(uK))) * 9.0, 2.0)) * (1.0 - uK);
-    float core = exp(-d * d * 30.0) * pow(1.0 - uK, 2.0) * 1.6;
-    float a = clamp(ring + core, 0.0, 1.0);
-    vec3 col = mix(vec3(0.0, 0.8, 0.85), vec3(0.85, 1.0, 1.0), clamp(core, 0.0, 1.0));
-    gl_FragColor = vec4(col, a);
-  }
-`;
-const easeOut = (t: number) => 1 - Math.pow(1 - t, 3);
 
 // Бугорок под полотном, второй проход: по карте высоты (её рисует полоса ленты, см. ribbon.ts)
 // считаем наклон поверхности в каждом пикселе и даём свет, тень и лёгкую бирюзу по гребню.
@@ -270,21 +265,8 @@ export function PageGL({ ribbon: steps, children }: { ribbon: RibbonStep[]; chil
     let ribbon: Ribbon | null = null;
     const ribbonGroup = new THREE.Group();
     scene.add(ribbonGroup);
-    const flash = new THREE.Mesh(
-      new THREE.PlaneGeometry(1, 1),
-      new THREE.ShaderMaterial({
-        vertexShader: flashVertex,
-        fragmentShader: flashFragment,
-        transparent: true,
-        depthTest: false,
-        depthWrite: false,
-        uniforms: { uK: { value: 0 } },
-      }),
-    );
-    flash.visible = false;
-    flash.renderOrder = 10;
-    ribbonGroup.add(flash);
 
+    let appliedStyle: RibbonStyle | null = null;
     // карта высоты бугорка под полотном: своя сцена и текстура, по которой считается рельеф
     const heightScene = new THREE.Scene();
     const heightGroup = new THREE.Group();
@@ -324,6 +306,7 @@ export function PageGL({ ribbon: steps, children }: { ribbon: RibbonStep[]; chil
         ribbon.dispose();
       }
       ribbon = buildRibbon(steps, vw, vh, vw < 700 ? 8 : 13);
+      appliedStyle = null;
       if (ribbon) ribbonGroup.add(ribbon.mesh);
       if (ribbon?.ridge) heightGroup.add(ribbon.ridge);
     };
@@ -386,7 +369,7 @@ export function PageGL({ ribbon: steps, children }: { ribbon: RibbonStep[]; chil
               uLo: { value: -1 },
               uHi: { value: 2 },
               uTime: { value: 0 },
-              uFlash: { value: 0 },
+              uAlpha: { value: 1 },
             },
           }),
         );
@@ -459,35 +442,31 @@ export function PageGL({ ribbon: steps, children }: { ribbon: RibbonStep[]; chil
       // прокрутка, под которую нарисована лента: во время паузы она стоит вместе со сценой
       const view = ribbon ? ribbon.view(scroll) : scroll;
 
-      // финальный знак: дописав контур, лента «переливается» в объёмную «7», затем ведущий
-      // к знаку кусок ленты обрезается
+      // финальный знак: дописав контур, лента уступает место объёмной «7» — та проступает
+      // поверх, лента под ней сходит на нет
       const revealOf = (g: SevenInfo) => clamp01((scroll - g.doneAt) / (g.revealEnd - g.doneAt || 1));
-      const cutOf = (g: SevenInfo) => clamp01((scroll - g.cutStart) / (g.cutEnd - g.cutStart || 1));
 
       // ── лента ──
       let head = 0;
       let tail = 0;
-      flash.visible = false;
       if (ribbon) {
         head = ribbon.headAt(scroll);
         tail = ribbon.tailFor(head, vh);
         const hold = [...ribbon.sevens.values()].find((g) => !g.lead);
-        const cut = hold ? cutOf(hold) : 0;
-        if (hold && cut > 0) {
-          // знак уже целиком объёмный — трубки внутри него нет, остаётся кусок [tail, start].
-          // Его конец у знака резко отдёргивается назад, хвост догоняет — кусок исчезает.
-          const D = Math.max(0, hold.start - tail);
-          head = hold.start - D * easeOut(cut);
-          tail = Math.min(head, tail + D * cut * cut * cut);
-          const k = clamp01(cut / 0.55);
-          if (k < 1) {
-            ribbon.pointAt(hold.start, flash.position);
-            flash.position.z = 60;
-            const size = Math.min(vw, vh) * 0.22;
-            flash.scale.set(size, size, 1);
-            flash.material.uniforms.uK.value = k;
-            flash.visible = true;
-          }
+        // финал: знак проявился — лента выходит из-под крючка и уползает назад по своему пути
+        // вверх, за край экрана (кусок той же длины просто едет назад)
+        const ret = hold ? clamp01((scroll - hold.retractStart) / (hold.retractEnd - hold.retractStart || 1)) : 0;
+        if (hold && ret > 0) {
+          const e = ret * ret * (3 - 2 * ret);
+          const end = Math.min(head, hold.start + 24);
+          const shift = e * (end - tail + vh * 0.3);
+          head = end - shift;
+          tail -= shift;
+        }
+        const style = getRibbonStyle();
+        if (style !== appliedStyle) {
+          ribbon.setStyle(style);
+          appliedStyle = style;
         }
         const u = ribbon.mesh.material.uniforms;
         u.uReveal.value = hold ? revealOf(hold) : 0;
@@ -588,20 +567,22 @@ export function PageGL({ ribbon: steps, children }: { ribbon: RibbonStep[]; chil
         // развёрнут лицом к зрителю (контур ленты совпадает только с фронтальным кадром)
         const g = ribbon?.sevens.get(s.entry.el.dataset.ribbon ?? "");
         let lo = -1;
-        let hi = 2;
+        const hi = 2; // проявление по линии письма больше не используется: финальный знак проступает целиком
         let lock = 0;
         if (g?.lead) {
           const p = clamp01((head - g.start) / (g.end - g.start || 1));
           lo = p <= 0 ? -1 : p >= 1 ? 2 : p;
           lock = clamp01(scroll / (vh * SEVEN_TURN * 0.8));
-        } else if (g) {
-          const rv = revealOf(g);
-          const cut = cutOf(g);
-          hi = rv <= 0 ? -1 : rv >= 1 ? 2 : rv;
-          // пока лента держится за знак, он строго фронтальный; отрезанный — снова живой
-          lock = 1 - 0.75 * easeOut(cut);
-          u.uFlash.value = cut > 0 ? Math.pow(1 - clamp01(cut / 0.5), 2) : 0;
         }
+        // финальный знак проступает поверх ленты целиком; лента остаётся пристёгнутой
+        // к крючку, поэтому знак всё время смотрит прямо
+        let alpha = 1;
+        if (g && !g.lead) {
+          const rv = clamp01(revealOf(g) / 0.7);
+          alpha = rv * rv * (3 - 2 * rv);
+          lock = 1;
+        }
+        u.uAlpha.value = alpha;
         u.uLo.value = lo;
         u.uHi.value = hi;
         u.uTime.value = t;
@@ -609,7 +590,7 @@ export function PageGL({ ribbon: steps, children }: { ribbon: RibbonStep[]; chil
         const target = cursor + (0.5 - cursor) * lock;
         s.cur += (target * (n - 1) - s.cur) * (0.08 + 0.3 * lock);
         // пока знак переходит в ленту, кадр строго фронтальный — иначе контуры разойдутся
-        if (lo > 0 || (hi > -1 && hi < 1.5)) s.cur = s.entry.initial;
+        if (lo > 0 || (g && !g.lead)) s.cur = s.entry.initial;
         const idx = Math.max(0, Math.min(n - 1, Math.round(s.cur)));
         const img = s.entry.frames[idx];
         if (idx !== s.shown && img.complete && img.naturalWidth) {
@@ -618,7 +599,8 @@ export function PageGL({ ribbon: steps, children }: { ribbon: RibbonStep[]; chil
           s.shown = idx;
         }
         const bob = Math.sin(t * 1.1) * r.height * 0.012 * (1 - lock);
-        s.mesh.position.set(r.left + r.width / 2 - vw / 2, vh / 2 - (r.top + r.height / 2) + bob, 0);
+        // финальный знак — перед лентой (она его выписала и уходит под него)
+        s.mesh.position.set(r.left + r.width / 2 - vw / 2, vh / 2 - (r.top + r.height / 2) + bob, g && !g.lead ? 60 : 0);
         s.mesh.scale.set(r.width, r.height, 1);
         u.uOpacity.value += ((s.shown >= 0 ? 1 : 0) - u.uOpacity.value) * 0.08;
       }
@@ -688,8 +670,6 @@ export function PageGL({ ribbon: steps, children }: { ribbon: RibbonStep[]; chil
       window.removeEventListener("pointermove", onPointer);
       ro.disconnect();
       ribbon?.dispose();
-      flash.geometry.dispose();
-      flash.material.dispose();
       relief.geometry.dispose();
       relief.material.dispose();
       heightTarget.dispose();
