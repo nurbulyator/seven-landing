@@ -49,3 +49,6 @@ next-env.d.ts
 
 # исходные ассеты из seven-hills-kz-site (тяжёлые, в репозиторий попадают только используемые)
 /_assets/
+
+# Python (скрипты Blender)
+__pycache__/
