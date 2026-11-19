@@ -13,7 +13,7 @@ export function OutroV3() {
         data-ribbon="outro-stage"
         className="sticky top-0 flex h-svh flex-col items-center justify-center overflow-hidden px-5 pt-14 text-center"
       >
-        <SevenFrames ribbonKey="outro-seven" className="-my-[min(17vw,12svh,8.5rem)] w-[min(92vw,68svh,46rem)] shrink-0" />
+        <SevenFrames ribbonKey="outro-seven" birth className="-my-[min(17vw,12svh,8.5rem)] w-[min(92vw,68svh,46rem)] shrink-0" />
         <h2 className="mt-12 text-[clamp(2.6rem,7vw,6.4rem)] leading-[0.95] font-semibold tracking-[-0.045em]">{outroV3.title}</h2>
         <p className="mt-4 text-[1.15rem] text-muted sm:text-[1.3rem]">{outroV3.text}</p>
       </div>

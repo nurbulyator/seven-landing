@@ -6,13 +6,16 @@ import { usePageGL } from "@/components/v3/gl/PageGL";
 
 const FRAMES = 61;
 const frameSrc = (i: number) => `/v2/seven/${String(i + 1).padStart(2, "0")}.webp`;
+const BIRTH_FRAMES = 36;
+const birthSrc = (i: number) => `/v3/seven-birth/${String(i + 1).padStart(2, "0")}.webp`;
 
 /**
  * Объёмный знак «7» из кадров Blender: место в вёрстке и запасная картинка; сам знак рисует PageGL.
  * ribbonKey — ключ data-ribbon: по нему лента находит знак, выписывает его контур
  * и «переливается» в знак или из него. Элемент должен быть квадратным (кадр 1200×1200).
+ * birth — подгрузить ролик рождения знака для финала (грузится, когда знак уже близко).
  */
-export function SevenFrames({ ribbonKey, className }: { ribbonKey: string; className: string }) {
+export function SevenFrames({ ribbonKey, className, birth }: { ribbonKey: string; className: string; birth?: boolean }) {
   const ref = useRef<HTMLDivElement>(null);
   const gl = usePageGL();
   useEffect(() => {
@@ -28,8 +31,26 @@ export function SevenFrames({ ribbonKey, className }: { ribbonKey: string; class
       frames[i].decoding = "async";
       frames[i].src = frameSrc(i);
     });
-    return gl.seq({ el, frames, initial: mid });
-  }, [gl]);
+    if (!birth) return gl.seq({ el, frames, initial: mid });
+    const births = Array.from({ length: BIRTH_FRAMES }, () => new Image());
+    const io = new IntersectionObserver(
+      ([e]) => {
+        if (!e.isIntersecting) return;
+        io.disconnect();
+        births.forEach((b, i) => {
+          b.decoding = "async";
+          b.src = birthSrc(i);
+        });
+      },
+      { rootMargin: "250% 0px" },
+    );
+    io.observe(el);
+    const off = gl.seq({ el, frames, initial: mid, birth: births });
+    return () => {
+      io.disconnect();
+      off();
+    };
+  }, [gl, birth]);
 
   return (
     <div ref={ref} data-ribbon={ribbonKey} aria-hidden className={`pointer-events-none aspect-square ${className}`}>

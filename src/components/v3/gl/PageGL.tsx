@@ -27,7 +27,8 @@ import { getRibbonStyle, type RibbonStyle } from "@/components/v3/ribbonStyle";
  * Без WebGL или при «уменьшить движение» остаются обычные <img>/<video> из вёрстки.
  */
 
-export type SeqEntry = { el: HTMLElement; frames: HTMLImageElement[]; initial: number };
+// birth — кадры «рождения» финального знака (плоская «7» выдавливается в объём), если есть
+export type SeqEntry = { el: HTMLElement; frames: HTMLImageElement[]; initial: number; birth?: HTMLImageElement[] };
 export type MorphEntry = { a: HTMLElement; b: HTMLElement; video: HTMLVideoElement; dip: string };
 
 type Registry = {
@@ -702,8 +703,17 @@ export function PageGL({ ribbon: steps, children }: { ribbon: RibbonStep[]; chil
         s.cur += (target * (n - 1) - s.cur) * (0.08 + 0.3 * lock);
         // пока знак переходит в ленту, кадр строго фронтальный — иначе контуры разойдутся
         if (lo > 0 || (g && !g.lead)) s.cur = s.entry.initial;
-        const idx = Math.max(0, Math.min(n - 1, Math.round(s.cur)));
-        const img = s.entry.frames[idx];
+        let idx = Math.max(0, Math.min(n - 1, Math.round(s.cur)));
+        let img = s.entry.frames[idx];
+        // финальный знак: ролик из Blender по времени финала — первый кадр совпадает с лёгшей
+        // плашмя лентой, дальше «7» выдавливается в объём с перелётом и встаёт в фас
+        const birth = g && !g.lead ? s.entry.birth : undefined;
+        const birthOn = !!birth && birth.every((b) => b.complete && b.naturalWidth);
+        if (birth && birthOn) {
+          const b = Math.round(clamp01((finale - 0.6) / 0.4) * (birth.length - 1));
+          img = birth[b];
+          idx = n + b;
+        }
         if (idx !== s.shown && img.complete && img.naturalWidth) {
           s.tex.image = img;
           s.tex.needsUpdate = true;
@@ -713,7 +723,7 @@ export function PageGL({ ribbon: steps, children }: { ribbon: RibbonStep[]; chil
         // финальный знак — перед лентой (она его выписала и уходит под него)
         s.mesh.position.set(r.left + r.width / 2 - vw / 2, vh / 2 - (r.top + r.height / 2) + bob, g && !g.lead ? 60 : 0);
         // финальный знак появляется с лёгким толчком: чуть больше и мягко на место
-        const pop = g && !g.lead ? 1 + 0.045 * Math.sin(Math.PI * finPop) * (1 - finPop * 0.4) : 1;
+        const pop = g && !g.lead && !birthOn ? 1 + 0.045 * Math.sin(Math.PI * finPop) * (1 - finPop * 0.4) : 1;
         s.mesh.scale.set(r.width * pop, r.height * pop, 1);
         u.uOpacity.value += ((s.shown >= 0 ? 1 : 0) - u.uOpacity.value) * 0.08;
       }
