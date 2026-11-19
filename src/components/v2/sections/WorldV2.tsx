@@ -70,13 +70,14 @@ const arcVertex = /* glsl */ `
     gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
   }
 `;
+// дуга в бирюзе ленты: светится к голове
 const arcFragment = /* glsl */ `
   uniform float uProgress;
   varying float vT;
   void main() {
     if (vT > uProgress) discard;
     float head = smoothstep(uProgress - 0.12, uProgress, vT);
-    vec3 col = mix(vec3(1.0, 0.71, 0.25), vec3(1.0, 0.95, 0.85), head);
+    vec3 col = mix(vec3(0.0, 0.733, 0.769), vec3(0.78, 0.98, 0.99), head);
     float a = 0.85 + head * 0.15;
     gl_FragColor = vec4(col * a, a);
   }
