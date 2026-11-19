@@ -188,14 +188,18 @@ const reliefFragment = /* glsl */ `
     // матовая поверхность: мягкий широкий отблеск вместо резкого блика
     vec3 Hv = normalize(L + vec3(0.0, 0.0, 1.0));
     float sheen = max(pow(max(dot(n, Hv), 0.0), 14.0) - pow(Hv.z, 14.0), 0.0);
-    float hi = max(lit, 0.0) * mix(1.25, 0.7, uDark) + sheen * mix(0.45, 0.35, uDark);
-    float sh = max(-lit, 0.0) * mix(0.65, 1.8, uDark);
-    float glow = smoothstep(0.45, 1.0, h) * mix(0.06, 0.1, uDark);
+    // в тёмной теме белые блики и чёрные тени выглядят как дым, а там, где лента петлёй подходит
+    // к самой себе, блик ложится на ложбину между прядями серой дымкой. Поэтому в тёмной теме бликов нет:
+    // рельеф держится на мягкой тени и бирюзе, которая просвечивает только по самому гребню ленты
+    float hi = max(lit, 0.0) * mix(1.25, 0.0, uDark) + sheen * mix(0.45, 0.05, uDark);
+    float sh = max(-lit, 0.0) * mix(0.65, 0.45, uDark);
+    float glow = smoothstep(mix(0.45, 0.55, uDark), 1.0, h) * mix(0.06, 0.4, uDark);
     float a = clamp(hi + sh + glow, 0.0, 0.9);
     if (a < 0.003) discard;
     // тень не чёрная, а в тон фона: на светлом — серо-бирюзовая
     vec3 shade = mix(vec3(0.16, 0.22, 0.23), vec3(0.0), uDark);
-    vec3 col = (vec3(1.0) * hi + shade * sh + vec3(0.0, 0.733, 0.769) * glow) / a;
+    vec3 light = mix(vec3(1.0), vec3(0.62, 0.9, 0.93), uDark);
+    vec3 col = (light * hi + shade * sh + vec3(0.0, 0.733, 0.769) * glow) / a;
     gl_FragColor = vec4(col, a);
   }
 `;
