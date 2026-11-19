@@ -4,6 +4,7 @@ import { useEffect, useRef } from "react";
 import * as THREE from "three";
 
 import { useTheme } from "@/components/ThemeToggle";
+import { StarField } from "@/components/v3/StarField";
 import { worldV3 } from "@/content/v3";
 import { clamp01, sectionProgress } from "@/lib/scroll";
 
@@ -332,6 +333,7 @@ export function WorldV3() {
     >
       {/* у закреплённого слоя свой фон — лента проходит «за» глобусом и не просвечивает */}
       <div className={`sticky top-0 z-[6] h-svh overflow-hidden ${dark ? "bg-[#030506]" : "bg-[#eef2f2]"}`}>
+        {dark && <StarField />}
         <canvas ref={canvasRef} aria-hidden className="absolute inset-0 h-full w-full" />
 
         <p
