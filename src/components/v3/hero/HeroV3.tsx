@@ -4,6 +4,7 @@ import { useSyncExternalStore } from "react";
 
 import { useTheme } from "@/components/ThemeToggle";
 import { FluidCanvas } from "@/components/v3/hero/FluidCanvas";
+import { type BackdropStyle, HeroBackdrop } from "@/components/v3/hero/HeroBackdrop";
 import { ReliefCanvas } from "@/components/v3/hero/ReliefCanvas";
 import { SevenFrames } from "@/components/v3/SevenFrames";
 import { heroV3 } from "@/content/v3";
@@ -38,72 +39,36 @@ function setVariant(v: Variant) {
   listeners.forEach((l) => l());
 }
 
-/** Наполнение первого экрана — пока сравниваем варианты; выбор хранится в браузере зрителя. */
-const fills = [
+/** Живой фон за знаком — пока сравниваем подачи; выбор хранится в браузере зрителя. */
+const backdrops = [
   { key: "none", label: "Нет" },
-  { key: "facts", label: "Факты" },
-  { key: "status", label: "Статус" },
-  { key: "both", label: "Оба" },
+  { key: "contours", label: "Холмы" },
+  { key: "dots", label: "Точки" },
 ] as const;
-type Fill = (typeof fills)[number]["key"];
-const FILL_KEY = "v3-hero-fill";
-const fillListeners = new Set<() => void>();
-function readFill(): Fill {
+type Backdrop = (typeof backdrops)[number]["key"];
+const BG_KEY = "v3-hero-bg";
+const bgListeners = new Set<() => void>();
+function readBackdrop(): Backdrop {
   let saved: string | null = null;
   try {
-    saved = localStorage.getItem(FILL_KEY);
+    saved = localStorage.getItem(BG_KEY);
   } catch {}
-  return fills.find((f) => f.key === saved)?.key ?? "both";
+  return backdrops.find((f) => f.key === saved)?.key ?? "contours";
 }
-function subscribeFill(listener: () => void) {
-  fillListeners.add(listener);
-  return () => fillListeners.delete(listener);
+function subscribeBackdrop(listener: () => void) {
+  bgListeners.add(listener);
+  return () => bgListeners.delete(listener);
 }
-function setFill(f: Fill) {
+function setBackdrop(f: Backdrop) {
   try {
-    localStorage.setItem(FILL_KEY, f);
+    localStorage.setItem(BG_KEY, f);
   } catch {}
-  fillListeners.forEach((l) => l());
-}
-
-/** Панель «системы работают»: подкрепляет заголовок, точки мягко пульсируют. */
-function StatusPanel({ dark }: { dark: boolean }) {
-  const st = heroV3.status;
-  return (
-    <div
-      aria-label={st.title}
-      className={`pointer-events-none absolute right-6 bottom-6 z-10 w-[15.5rem] rounded-[1.25rem] p-5 backdrop-blur-xl max-lg:hidden lg:right-10 lg:bottom-10 ${
-        dark ? "bg-white/[0.06] text-white shadow-[0_0_0_1px_rgb(255_255_255/0.08)]" : "bg-white/70 text-[#0b1214] shadow-[0_0_0_1px_rgb(17_22_24/0.06),0_20px_50px_-30px_rgb(17_22_24/0.35)]"
-      }`}
-    >
-      <p className={`text-[0.72rem] font-medium tracking-[0.06em] uppercase ${dark ? "text-white/55" : "text-[#0b1214]/50"}`}>{st.title}</p>
-      <ul className="mt-3 space-y-2.5">
-        {st.items.map((item, i) => (
-          <li key={item} className="flex items-center justify-between gap-3 text-[0.92rem]">
-            <span className="flex items-center gap-2.5">
-              <span className="relative flex size-2">
-                <span
-                  className="absolute inset-0 animate-ping rounded-full bg-[#2bd47d] opacity-60"
-                  style={{ animationDuration: "2.4s", animationDelay: `${i * 0.6}s` }}
-                />
-                <span className="relative size-2 rounded-full bg-[#2bd47d]" />
-              </span>
-              {item}
-            </span>
-            <span className={`text-[0.78rem] ${dark ? "text-white/45" : "text-[#0b1214]/45"}`}>{st.state}</span>
-          </li>
-        ))}
-      </ul>
-      <p className={`mt-4 border-t pt-3 text-[0.78rem] ${dark ? "border-white/10 text-white/55" : "border-black/5 text-[#0b1214]/55"}`}>{st.footer}</p>
-    </div>
-  );
+  bgListeners.forEach((l) => l());
 }
 
 export function HeroV3() {
   const variant = useSyncExternalStore<Variant>(subscribe, readVariant, () => "seven");
-  const fill = useSyncExternalStore<Fill>(subscribeFill, readFill, () => "both");
-  const showFacts = fill === "facts" || fill === "both";
-  const showStatus = fill === "status" || fill === "both";
+  const backdrop = useSyncExternalStore<Backdrop>(subscribeBackdrop, readBackdrop, () => "contours");
   const theme = useTheme();
   const darkCard = variant === "flow" || theme === "dark";
 
@@ -117,6 +82,9 @@ export function HeroV3() {
             : "bg-[radial-gradient(120%_90%_at_70%_40%,#ffffff_0%,#e4eaea_70%)]"
         }`}
       >
+        {variant === "seven" && backdrop !== "none" && (
+          <HeroBackdrop styleKey={backdrop as BackdropStyle} dark={darkCard} />
+        )}
         {variant === "seven" && (
           <SevenFrames
             ribbonKey="seven-hero"
@@ -125,7 +93,6 @@ export function HeroV3() {
         )}
         {variant === "flow" && <FluidCanvas />}
         {variant === "relief" && <ReliefCanvas dark={theme === "dark"} />}
-        {showStatus && <StatusPanel dark={darkCard} />}
 
         <div
           className={`pointer-events-none relative z-10 flex h-full flex-col justify-end p-6 sm:p-10 lg:p-14 ${
@@ -161,21 +128,6 @@ export function HeroV3() {
               </a>
             </div>
           </div>
-          {showFacts && (
-            <dl
-              className={`mt-8 grid max-w-[56rem] grid-cols-2 gap-x-8 gap-y-4 border-t pt-6 sm:grid-cols-4 ${
-                darkCard ? "border-white/10" : "border-black/[0.07]"
-              }`}
-            >
-              {heroV3.facts.map((f) => (
-                <div key={f.label}>
-                  <dt className="sr-only">{f.label}</dt>
-                  <dd className="text-[clamp(1.5rem,2.4vw,2.2rem)] leading-none font-semibold tracking-[-0.03em]">{f.value}</dd>
-                  <dd className={`mt-1.5 text-[0.85rem] ${darkCard ? "text-white/60" : "text-[#0b1214]/55"}`}>{f.label}</dd>
-                </div>
-              ))}
-            </dl>
-          )}
         </div>
       </div>
 
@@ -187,22 +139,22 @@ export function HeroV3() {
         <span>+</span>
       </div>
 
-      {/* переключатели для сравнения вариантов: наполнение и первый экран
+      {/* переключатели для сравнения вариантов: фон и первый экран
           (справа под шапкой, чтобы не закрывали содержимое) */}
       <div className="fixed top-[4.6rem] right-4 z-50 flex flex-col items-end gap-2 text-[0.8rem] text-white">
         <div
           role="radiogroup"
-          aria-label="Наполнение первого экрана"
+          aria-label="Фон первого экрана"
           className="flex items-center gap-1 rounded-full bg-[#0b1214]/85 p-1 shadow-lg backdrop-blur-xl"
         >
-          <span className="hidden px-3 text-white/60 sm:inline">Наполнение</span>
-          {fills.map((f) => (
+          <span className="hidden px-3 text-white/60 sm:inline">Фон</span>
+          {backdrops.map((f) => (
             <button
               key={f.key}
               type="button"
               role="radio"
-              aria-checked={fill === f.key}
-              onClick={() => setFill(f.key)}
+              aria-checked={backdrop === f.key}
+              onClick={() => setBackdrop(f.key)}
               className="cursor-pointer rounded-full px-3.5 py-1.5 transition-colors hover:bg-white/10 aria-checked:bg-white aria-checked:text-[#0b1214]"
             >
               {f.label}
