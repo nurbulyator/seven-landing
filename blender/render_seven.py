@@ -3,6 +3,7 @@
 
   blender -b -P blender/render_seven.py -- <папка> [--frames 1,40,80] [--size 1200] [--samples 160]
   blender -b -P blender/render_seven.py -- <папка> --turn 61   # для /v2: знак поворачивается за курсором
+  blender -b -P blender/render_seven.py -- <папка> --birth 36  # для /v3: финал, плоская «7» выдавливается в объём
 
 Фон прозрачный, без тени: кадры подходят и для светлой, и для тёмной темы (тень рисует вёрстка).
 Геометрия — из логотипа (_assets/seven-hills-logo-*.svg): внешняя рамка и малая «7».
@@ -22,7 +23,10 @@ FRAMES = None
 SIZE = 1200
 SAMPLES = 160
 TURN = 0  # >0: вместо анимации — N кадров поворота от −40° до +40° (кадр выбирается по положению курсора)
+BIRTH = 0  # >0: N кадров «рождения» — плоская «7» (как легла лента) выдавливается в объём с перелётом
 for i, a in enumerate(argv):
+    if a == "--birth":
+        BIRTH = int(argv[i + 1])
     if a == "--turn":
         TURN = int(argv[i + 1])
     if a == "--frames":
@@ -206,8 +210,55 @@ if TURN:
         for kp in fc.keyframe_points:
             kp.interpolation = "LINEAR"
 
+if BIRTH:
+    # Вид — как центральный кадр поворота (лента выстраивается по фронтальному контуру), последний
+    # кадр совпадает с ним. Толщина растёт из почти нуля с перелётом, малая «7» — с задержкой;
+    # по фаскам пробегает блик от узкого софтбокса, к концу он гаснет.
+    for ob in (rig, frame, inner):
+        ob.animation_data_clear()
+    frame.location = inner.location = (0, 0, 0)
+    inner.rotation_euler = (0, 0, 0)
+    rig.rotation_euler = Euler([math.radians(5), 0, 0])
+    sc.frame_start, sc.frame_end = 1, BIRTH
+
+    def depth_at(t):
+        # 0 → перелёт 1.24 → недолёт 0.95 → 1: затухающая пружина
+        if t <= 0:
+            return 0.02
+        if t >= 1:
+            return 1.0
+        e = 1 - math.exp(-7.5 * t) * math.cos(11.0 * t)
+        return max(0.02, e)
+
+    def nod_at(t):
+        # строго спереди толщину не видно: пока знак выдавливается, он чуть доворачивается
+        # и затухающим качанием возвращается точно в фас
+        if t <= 0 or t >= 1:
+            return 0.0
+        return math.exp(-4.5 * t) * math.sin(7.0 * t) / 0.37 * (1 - t ** 4)
+
+    span = BIRTH * 0.8  # последние кадры — покой, совпадает с центральным кадром поворота
+    for f in range(1, BIRTH + 1):
+        t = (f - 1) / span
+        for ob, delay in ((frame, 0.0), (inner, 3.0)):
+            ob.scale = (1, depth_at((f - 1 - delay) / span), 1)
+            ob.keyframe_insert("scale", frame=f)
+        n = nod_at(t)
+        rig.rotation_euler = Euler([math.radians(5 + 9 * n), 0, math.radians(-24 * n)])
+        rig.keyframe_insert("rotation_euler", frame=f)
+    sweep = area("Sweep", (-7, -9, 1), (0, 0, 0), 0.6, 0, (1.0, 0.97, 0.92), size_y=16)
+    for f in range(1, BIRTH + 1):
+        t = (f - 1) / span
+        x = -7 + 14 * min(1.0, max(0.0, (t - 0.1) / 0.6))
+        sweep.location = (x, -9, 1)
+        sweep.rotation_euler = (Vector((0, 0, 0)) - Vector(sweep.location)).to_track_quat("-Z", "Y").to_euler()
+        sweep.keyframe_insert("location", frame=f)
+        sweep.keyframe_insert("rotation_euler", frame=f)
+        sweep.data.energy = 1800 * math.sin(math.pi * min(1.0, max(0.0, (t - 0.1) / 0.6)))
+        sweep.data.keyframe_insert("energy", frame=f)
+
 os.makedirs(OUT, exist_ok=True)
-frames = FRAMES or list(range(1, (TURN or 120) + 1))
+frames = FRAMES or list(range(1, (BIRTH or TURN or 120) + 1))
 for f in frames:
     sc.frame_set(f)
     sc.render.filepath = os.path.join(OUT, f"{f:03d}.png")
