@@ -106,6 +106,28 @@ const seqFragment = /* glsl */ `
 // Бугорок под полотном, второй проход: по карте высоты (её рисует полоса ленты, см. ribbon.ts)
 // считаем наклон поверхности в каждом пикселе и даём свет, тень и лёгкую бирюзу по гребню.
 // Слой лежит за всем остальным (глубина у дальней плоскости) и обрезан по полотну.
+// лёгкое размытие карты высоты (по одной оси за проход): убирает мелкую рябь там, где
+// куски полосы на изгибах чуть накладываются, — поверхность остаётся гладкой
+const blurVertex = /* glsl */ `
+  varying vec2 vUv;
+  void main() { vUv = position.xy * 0.5 + 0.5; gl_Position = vec4(position.xy, 0.0, 1.0); }
+`;
+const blurFragment = /* glsl */ `
+  uniform sampler2D uTex;
+  uniform vec2 uDir; // шаг в долях текстуры
+  varying vec2 vUv;
+  void main() {
+    float w[5];
+    w[0] = 0.227; w[1] = 0.194; w[2] = 0.121; w[3] = 0.054; w[4] = 0.016;
+    float h = texture2D(uTex, vUv).r * w[0];
+    for (int i = 1; i < 5; i++) {
+      h += texture2D(uTex, vUv + uDir * float(i)).r * w[i];
+      h += texture2D(uTex, vUv - uDir * float(i)).r * w[i];
+    }
+    gl_FragColor = vec4(h, 0.0, 0.0, 1.0);
+  }
+`;
+
 const reliefVertex = /* glsl */ `
   void main() { gl_Position = vec4(position.xy, 0.9999, 1.0); }
 `;
@@ -298,6 +320,18 @@ export function PageGL({ ribbon: steps, children }: { ribbon: RibbonStep[]; chil
     relief.renderOrder = -1;
     relief.visible = false;
     scene.add(relief);
+    const blurTarget = heightTarget.clone();
+    const blurMat = new THREE.ShaderMaterial({
+      vertexShader: blurVertex,
+      fragmentShader: blurFragment,
+      depthTest: false,
+      depthWrite: false,
+      uniforms: { uTex: { value: heightTarget.texture }, uDir: { value: new THREE.Vector2() } },
+    });
+    const blurQuad = new THREE.Mesh(new THREE.PlaneGeometry(2, 2), blurMat);
+    blurQuad.frustumCulled = false;
+    const blurScene = new THREE.Scene();
+    blurScene.add(blurQuad);
 
     const rebuildRibbon = () => {
       if (ribbon) {
@@ -319,10 +353,13 @@ export function PageGL({ ribbon: steps, children }: { ribbon: RibbonStep[]; chil
     const resize = () => {
       vw = window.innerWidth;
       vh = window.innerHeight;
-      renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+      // плотнее экрана (×1.5, но не больше 2): тонкие края плоской ленты не дробятся на пиксели
+      renderer.setPixelRatio(Math.min(Math.max(window.devicePixelRatio, 1) * 1.5, 2));
       renderer.setSize(vw, vh, false);
       const buf = renderer.getDrawingBufferSize(new THREE.Vector2());
-      heightTarget.setSize(buf.x, buf.y);
+      // карта высоты гладкая — хватает половины разрешения (и вчетверо меньше видеопамяти)
+      heightTarget.setSize(Math.ceil(buf.x / 2), Math.ceil(buf.y / 2));
+      blurTarget.setSize(Math.ceil(buf.x / 2), Math.ceil(buf.y / 2));
       relief.material.uniforms.uBuf.value.copy(buf);
       Object.assign(camera, { left: -vw / 2, right: vw / 2, top: vh / 2, bottom: -vh / 2 });
       camera.updateProjectionMatrix();
@@ -641,7 +678,8 @@ export function PageGL({ ribbon: steps, children }: { ribbon: RibbonStep[]; chil
         u.uTint.value = 1 - ease(clamp01((p - 0.2) / 0.6));
         u.uTime.value = t;
         const dip = ribbon?.marks.get(m.entry.dip);
-        u.uFill.value = dip === undefined ? 1 : Math.max(clamp01((head - dip) / 420), p > 0 ? 1 : 0);
+        // заливка идёт строго за прокруткой (за головой ленты), без скачка, когда начинается полёт
+        u.uFill.value = dip === undefined ? 1 : Math.max(clamp01((head - dip) / 420), clamp01(p / 0.3));
         if (dip !== undefined && ribbon) {
           // точка касания ленты в координатах карточки
           const s = ribbon.samples;
@@ -657,6 +695,16 @@ export function PageGL({ ribbon: steps, children }: { ribbon: RibbonStep[]; chil
       if (relief.visible) {
         renderer.setRenderTarget(heightTarget);
         renderer.render(heightScene, camera);
+        // размытие: по горизонтали в blurTarget, по вертикали обратно в heightTarget
+        const bu = blurMat.uniforms;
+        bu.uTex.value = heightTarget.texture;
+        (bu.uDir.value as THREE.Vector2).set(1 / heightTarget.width, 0);
+        renderer.setRenderTarget(blurTarget);
+        renderer.render(blurScene, camera);
+        bu.uTex.value = blurTarget.texture;
+        (bu.uDir.value as THREE.Vector2).set(0, 1 / heightTarget.height);
+        renderer.setRenderTarget(heightTarget);
+        renderer.render(blurScene, camera);
         renderer.setRenderTarget(null);
       }
       renderer.render(scene, camera);
@@ -673,6 +721,9 @@ export function PageGL({ ribbon: steps, children }: { ribbon: RibbonStep[]; chil
       relief.geometry.dispose();
       relief.material.dispose();
       heightTarget.dispose();
+      blurTarget.dispose();
+      blurQuad.geometry.dispose();
+      blurMat.dispose();
       for (const s of seqs.values()) {
         s.mesh.geometry.dispose();
         s.mesh.material.dispose();

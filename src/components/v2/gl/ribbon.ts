@@ -344,6 +344,9 @@ const fragment = /* glsl */ `
       vec3 side = vFace >= 0.0 ? base : vec3(0.84, 0.96, 0.97);
       col = side * (0.38 + 0.72 * diff) + vec3(spec) * 0.45;
     }
+    // лента — акцент, но не главный: цвет чуть приглушён и темнее
+    float lum = dot(col, vec3(0.299, 0.587, 0.114));
+    col = mix(col, vec3(lum) * vec3(0.92, 1.0, 1.0), 0.3) * 0.93;
     gl_FragColor = vec4(col, alpha);
   }
 `;
@@ -364,17 +367,20 @@ const ridgeVertex = /* glsl */ `
   attribute float aV;
   attribute float aE;
   attribute float aF;
+  attribute float aD;   // расстояние от оси ленты со знаком, px
   uniform float uTime;
   varying float vS;
   varying float vV;
   varying float vE;
   varying float vF;
+  varying float vD;
   ${BREATH}
   void main() {
     vS = aS;
     vV = aV;
     vE = aE;
     vF = aF;
+    vD = aD;
     vec3 p = position;
     p.xy += breath(aS, uTime);
     gl_Position = projectionMatrix * modelViewMatrix * vec4(p, 1.0);
@@ -385,10 +391,12 @@ const ridgeFragment = /* glsl */ `
   uniform float uTail;
   uniform float uW;
   uniform float uTwist; // 1 — под полотном плоская перекрученная лента
+  uniform float uR;     // радиус трубки, px (полуширина плоской ленты — 1.9·uR)
   varying float vS;
   varying float vV;
   varying float vE;
   varying float vF;     // насколько лента здесь лежит плашмя (1) или стоит ребром (0)
+  varying float vD;
   ${RIDGE_ENV}
   void main() {
     // На внутренней стороне крутого изгиба треугольники полосы выворачиваются (меняют обход)
@@ -398,11 +406,19 @@ const ridgeFragment = /* glsl */ `
     float env = envAt(vS, uHead, uTail, uW) * vE;
     // верх облегает трубку, по бокам поверхность мягко спадает; к краю полосы — в ноль
     float v = vV;
-    // перекрученная лента: плашмя — бугорок шире и ниже, ребром — уже и выше; профиль мягкий
-    float wf = mix(1.0, mix(0.42, 1.0, vF), uTwist);
-    float hf = mix(1.0, mix(1.15, 0.75, vF), uTwist);
-    float vv = v / wf;
-    float h = (0.6 * exp(-vv * vv * 46.0) + 0.4 * exp(-vv * vv * 8.7)) * hf * env * (1.0 - smoothstep(0.75, 1.0, abs(v)));
+    // профиль — по настоящему расстоянию от оси (на внутренней стороне изгиба полоса уже)
+    float d = abs(vD);
+    float ve = d / uW;
+    float tubeH = 0.6 * exp(-ve * ve * 46.0) + 0.4 * exp(-ve * ve * 8.7);
+    // плоская лента: гребень ровно по её видимой ширине здесь (плашмя — во всю ширину,
+    // ребром — тонкий), чтобы на краю полотна бугорок переходил в ленту той же ширины;
+    // по бокам — мягкий спуск ткани
+    // ребром гребень не сжимается в нитку (иначе на этих местах видны заломы)
+    float hw = uR * (1.3 * vF + 0.75);
+    float crest = exp(-pow(d / hw, 2.6));
+    float skirt = exp(-pow(d / (hw + uW * 0.3), 2.0) * 2.0);
+    float bandH = (0.62 * crest + 0.38 * skirt) * mix(1.1, 0.8, vF);
+    float h = mix(tubeH, bandH, uTwist) * env * (1.0 - smoothstep(0.75, 1.0, abs(v)));
     if (h < 0.0005) discard;
     gl_FragColor = vec4(h, 0.0, 0.0, 1.0);
   }
@@ -735,10 +751,52 @@ export function buildRibbon(steps: RibbonStep[], vw: number, vh: number, radius:
     const re: number[] = [];
     const idx: number[] = [];
     const rf: number[] = [];
+    const rd: number[] = [];
     const tan = new THREE.Vector3();
+    const ta = new THREE.Vector3();
+    const tb = new THREE.Vector3();
     for (const r of under) {
       const n = Math.max(2, Math.ceil((r.b - r.a) / 5));
       const base = pos.length / 3;
+      // С внутренней стороны изгиба полоса не шире радиуса поворота: иначе её соседние куски
+      // накладываются и рельеф штрихуется. Кривизна — по широкому окну и сглажена вдоль ленты.
+      const kk: number[] = [];
+      for (let i = 0; i <= n; i++) {
+        const s = r.a + ((r.b - r.a) * i) / n;
+        const dd = 30;
+        curve.getTangentAt(Math.max(0, s - dd) / total, ta);
+        curve.getTangentAt(Math.min(total, s + dd) / total, tb);
+        kk.push(Math.atan2(ta.x * tb.y - ta.y * tb.x, ta.x * tb.x + ta.y * tb.y) / (2 * dd));
+      }
+      const ks = kk.map((_, i) => {
+        let sum = 0;
+        let cnt = 0;
+        for (let j = Math.max(0, i - 16); j <= Math.min(n, i + 16); j++) {
+          sum += kk[j];
+          cnt++;
+        }
+        return sum / cnt;
+      });
+      // как развёрнута плоская лента (тот же перекрут, что в шейдере трубки): доля её ширины
+      // в плоскости экрана; сглажено вдоль ленты, чтобы ширина гребня менялась плавно
+      const fl: number[] = [];
+      for (let i = 0; i <= n; i++) {
+        const s = r.a + ((r.b - r.a) * i) / n;
+        const seg = Math.min(segments, Math.max(0, Math.round((s / total) * segments)));
+        const phi = s * 0.0045;
+        const nn = tube.normals[seg];
+        const bb = tube.binormals[seg];
+        fl.push(Math.min(1, Math.hypot(Math.cos(phi) * nn.x + Math.sin(phi) * bb.x, Math.cos(phi) * nn.y + Math.sin(phi) * bb.y)));
+      }
+      const fs = fl.map((_, i) => {
+        let sum = 0;
+        let cnt = 0;
+        for (let j = Math.max(0, i - 20); j <= Math.min(n, i + 20); j++) {
+          sum += fl[j];
+          cnt++;
+        }
+        return sum / cnt;
+      });
       for (let i = 0; i <= n; i++) {
         const s = r.a + ((r.b - r.a) * i) / n;
         curve.getPointAt(s / total, c);
@@ -747,21 +805,17 @@ export function buildRibbon(steps: RibbonStep[], vw: number, vh: number, radius:
         const tx = tan.x / tl;
         const ty = tan.y / tl;
         const edge = Math.min(1, Math.min(s - r.a, r.b - s) / W);
-        // как развёрнута плоская лента здесь (тот же перекрут, что в шейдере трубки):
-        // доля её ширины, лежащая в плоскости экрана
-        const seg = Math.min(segments, Math.max(0, Math.round((s / total) * segments)));
-        const phi = s * 0.0045;
-        const nn = tube.normals[seg];
-        const bb = tube.binormals[seg];
-        const fx = Math.cos(phi) * nn.x + Math.sin(phi) * bb.x;
-        const fy = Math.cos(phi) * nn.y + Math.sin(phi) * bb.y;
-        const flat = Math.min(1, Math.hypot(fx, fy));
+        const flat = fs[i];
+        const k = ks[i];
         for (const v of [-1, 1]) {
-          pos.push(c.x - ty * W * v, c.y + tx * W * v, 0);
+          const inner = Math.sign(k) === v;
+          const w = inner ? Math.min(W, Math.max(W * 0.45, 0.9 / Math.max(Math.abs(k), 1e-6))) : W;
+          pos.push(c.x - ty * w * v, c.y + tx * w * v, 0);
           rs.push(s);
           rv.push(v);
           re.push(edge * edge * (3 - 2 * edge));
           rf.push(flat);
+          rd.push(w * v);
         }
         if (i < n) {
           const a = base + i * 2;
@@ -774,6 +828,7 @@ export function buildRibbon(steps: RibbonStep[], vw: number, vh: number, radius:
     ridgeGeo.setAttribute("aV", new THREE.Float32BufferAttribute(rv, 1));
     ridgeGeo.setAttribute("aE", new THREE.Float32BufferAttribute(re, 1));
     ridgeGeo.setAttribute("aF", new THREE.Float32BufferAttribute(rf, 1));
+    ridgeGeo.setAttribute("aD", new THREE.Float32BufferAttribute(rd, 1));
     ridgeGeo.setIndex(idx);
   }
   const ridgeMat = new THREE.ShaderMaterial({
@@ -792,6 +847,7 @@ export function buildRibbon(steps: RibbonStep[], vw: number, vh: number, radius:
       uTime: material.uniforms.uTime,
       uW: { value: W },
       uTwist: { value: 0 },
+      uR: { value: radius },
     },
   });
   const ridge = under.length ? new THREE.Mesh(ridgeGeo, ridgeMat) : null;

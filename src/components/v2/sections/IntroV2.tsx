@@ -1,9 +1,10 @@
 import { introV2 } from "@/content/v2";
 
 /**
- * Вступление. Строки заголовка съезжают вбок при прокрутке (data-shift), слова расталкивает
- * лента (data-push). Карточка слева сначала пустая: лента «капает» в неё и заливает кадр,
- * затем обвивает и вытягивает в большой ролик (см. ReelV2 и PageGL).
+ * Вступление. Заголовок прижат влево, его строки разъезжаются в разные стороны при прокрутке
+ * (data-shift). Лента не проходит сквозь текст: она идёт справа и заворачивает к карточке.
+ * Карточка слева сначала пустая: лента «капает» в неё и заливает кадр, затем обвивает
+ * и вытягивает в большой ролик (см. ReelV2 и PageGL).
  */
 export function IntroV2() {
   return (
@@ -11,23 +12,13 @@ export function IntroV2() {
       <div className="mx-auto grid w-full max-w-[90rem] gap-12 lg:grid-cols-12">
         <h2
           data-ribbon="intro-title"
-          className="text-[clamp(2.8rem,7.4vw,7.2rem)] leading-[0.98] font-semibold tracking-[-0.045em] lg:col-span-10 lg:col-start-2"
+          className="text-[clamp(2.8rem,7.4vw,7.2rem)] leading-[0.98] font-semibold tracking-[-0.045em] lg:col-span-9 lg:col-start-1"
         >
-          {introV2.title.map((line, i) => {
-            const words = line.split(" ");
-            return (
-              <span key={line} data-shift={i === 0 ? "0.05" : "-0.04"} className={`block will-change-transform ${i === 1 ? "lg:pl-[12%]" : ""}`}>
-                {words.map((word, k) => (
-                  <span key={k}>
-                    <span data-push className="inline-block will-change-transform">
-                      {word}
-                    </span>
-                    {k < words.length - 1 ? " " : ""}
-                  </span>
-                ))}
-              </span>
-            );
-          })}
+          {introV2.title.map((line, i) => (
+            <span key={line} data-shift={i === 0 ? "0.09" : "-0.09"} className={`block will-change-transform ${i === 1 ? "pl-[8%] lg:pl-[14%]" : ""}`}>
+              {line}
+            </span>
+          ))}
         </h2>
 
         <div
