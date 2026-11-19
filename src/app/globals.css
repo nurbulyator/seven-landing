@@ -306,3 +306,158 @@ body {
     background-color: rgb(255 255 255 / 0.05);
   }
 }
+
+/* /v4, продукты: пока скрипт не запустился, все названия в полную силу; потом — только активное. */
+.products-v4 .product-line {
+  transform: scaleX(0);
+  transition: transform 0.7s cubic-bezier(0.22, 1, 0.36, 1);
+}
+.products-v4 [data-active] .product-line {
+  transform: scaleX(1);
+}
+.products-v4[data-live] .product-text {
+  transition: opacity 0.5s ease;
+}
+.products-v4[data-live] li:not([data-active]) .product-name {
+  opacity: 0.18;
+}
+.products-v4[data-live] li:not([data-active]) .product-text {
+  opacity: 0.35;
+}
+
+/* /v4, продукты: наведение на название — буквы «перекатываются» (как барабан: старая опрокидывается
+   вперёд-вниз, новая выкатывается сверху; анимирует ProductsV4), экран заливается цветом продукта. */
+.products-v4 .rl {
+  position: relative;
+  display: inline-block;
+  white-space: nowrap;
+  perspective: 100vh;
+  transform: translateZ(0);
+}
+.products-v4 .rl-a,
+.products-v4 .rl-b {
+  display: inline-block;
+  /* ось вращения — за буквой, поэтому буква катится, а не просто наклоняется */
+  transform-origin: 50% 50% -0.5em;
+  transform-style: preserve-3d;
+  backface-visibility: visible;
+}
+.products-v4 .rl-layer {
+  position: absolute;
+  inset: 0;
+  white-space: nowrap;
+  pointer-events: none;
+  transform-style: preserve-3d;
+}
+.products-v4 .rl-b {
+  opacity: 0;
+}
+.products-v4 .product-name {
+  transition:
+    color 0.35s ease,
+    opacity 0.5s ease;
+}
+.products-v4 li[data-hover] .product-name {
+  color: var(--ink);
+}
+.products-v4[data-live] li[data-hover] .product-name,
+.products-v4[data-live] li[data-hover] .product-text {
+  opacity: 1;
+}
+.products-v4[data-flood] li:not([data-hover]) .product-name {
+  opacity: 0.07;
+}
+.products-v4[data-flood] li:not([data-hover]) .product-text,
+.products-v4[data-flood] li:not([data-hover]) .product-kind {
+  opacity: 0;
+}
+.products-v4[data-flood] li[data-hover] .product-text {
+  color: rgb(243 245 245 / 0.8);
+}
+.products-v4[data-flood] li[data-hover] .product-line {
+  background: var(--ink);
+  transform: scaleX(1);
+}
+.products-v4 .product-kind {
+  transition: opacity 0.4s ease;
+}
+
+/* заливка растёт кругом из центра 3D-формы */
+.products-flood {
+  position: fixed;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+  opacity: 0;
+  clip-path: circle(0 at var(--fx, 50%) var(--fy, 50%));
+  /* гаснет мягко, а круг сбрасывается уже невидимым */
+  transition:
+    opacity 0.45s ease,
+    clip-path 0s linear 0.45s,
+    background-color 0.4s ease;
+}
+.products-flood[data-on] {
+  opacity: 1;
+  clip-path: circle(150vmax at var(--fx, 50%) var(--fy, 50%));
+  transition:
+    opacity 0.12s ease,
+    clip-path 0.95s cubic-bezier(0.7, 0, 0.25, 1),
+    background-color 0.4s ease;
+}
+@media (prefers-reduced-motion: reduce) {
+  .products-flood,
+  .products-flood[data-on] {
+    clip-path: none;
+  }
+}
+
+/* /v5, продукты: тихий фон за формой — сетка точек (как чертёжная бумага), свечение и номер продукта.
+   Центр свечения и номера — там же, где форма (formPlacement в MorphCanvas.tsx, вариант far). */
+.products-backdrop {
+  --m: min(100vw, 100svh);
+  --fx: 50%;
+  --fy: calc(50% + 0.58 * var(--m));
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  overflow: hidden;
+}
+@media (min-aspect-ratio: 11/10) {
+  .products-backdrop {
+    --fx: calc(50% + min(0.42 * var(--m), 50vw - 0.36 * var(--m)));
+    --fy: calc(50% + 0.02 * var(--m));
+  }
+}
+.products-backdrop .pb-grid {
+  position: absolute;
+  inset: 0;
+  background-image: radial-gradient(circle, var(--line) 1px, transparent 1.4px);
+  background-size: 26px 26px;
+  -webkit-mask-image: radial-gradient(circle at var(--fx) var(--fy), #000 0, rgb(0 0 0 / 0.5) calc(var(--m) * 0.35), transparent calc(var(--m) * 0.75));
+  mask-image: radial-gradient(circle at var(--fx) var(--fy), #000 0, rgb(0 0 0 / 0.5) calc(var(--m) * 0.35), transparent calc(var(--m) * 0.75));
+}
+.products-backdrop .pb-glow {
+  position: absolute;
+  left: var(--fx);
+  top: var(--fy);
+  width: calc(var(--m) * 0.9);
+  height: calc(var(--m) * 0.9);
+  transform: translate(-50%, -50%);
+  background: radial-gradient(circle, rgb(0 187 196 / 0.13), rgb(0 187 196 / 0.04) 40%, transparent 68%);
+}
+.products-backdrop .pb-num {
+  position: absolute;
+  left: var(--fx);
+  top: var(--fy);
+  transform: translate(-50%, -52%);
+  font-size: calc(var(--m) * 0.62);
+  font-weight: 600;
+  line-height: 1;
+  letter-spacing: -0.06em;
+  color: transparent;
+  -webkit-text-stroke: 1px var(--line);
+  font-variant-numeric: tabular-nums;
+}
+.products-v4[data-flood] li[data-hover] .product-point {
+  border-color: rgb(243 245 245 / 0.25);
+}
