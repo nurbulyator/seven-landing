@@ -32,7 +32,9 @@
   --shadow: rgb(17 22 24 / 0.16);
 }
 
-:root[data-theme="dark"] {
+/* Тёмные токены и на отдельном элементе: шапка /v6 темнеет над ночной сценой глобуса в любой теме. */
+:root[data-theme="dark"],
+[data-theme="dark"] {
   color-scheme: dark;
   --bg: #050708;
   --bg-2: #0d1213;

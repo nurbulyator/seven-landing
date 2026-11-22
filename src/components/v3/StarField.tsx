@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, type RefObject } from "react";
 
 /**
  * Звёздное небо за глобусом (тёмная тема): мелкие звёзды разной яркости в три слоя — слои
@@ -20,6 +20,7 @@ uniform vec2 uRes;
 uniform float uDpr;
 uniform float uTime;
 uniform vec2 uPar;  // смещение курсора от центра экрана, −1..1
+uniform float uReveal; // 0…1 — сколько звёзд уже зажглось: первыми самые яркие
 
 float hash(vec2 p) { return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
 
@@ -30,7 +31,9 @@ float starLayer(vec2 fc, float cell, float chance, float bright, float glow, flo
   float h = hash(id + seed);
   if (h > chance) return 0.0;
   vec2 pos = (0.15 + 0.7 * vec2(hash(id + seed + 11.3), hash(id + seed + 27.1))) * cell;
-  float b = bright * pow(hash(id + seed + 5.7), 2.2);
+  float hb = hash(id + seed + 5.7);
+  float b = bright * pow(hb, 2.2);
+  b *= smoothstep(1.0 - uReveal * 1.2, 1.2 - uReveal * 1.2, hb);
   b *= 0.6 + 0.4 * sin(uTime * (0.6 + 1.8 * hash(id + seed + 3.1)) + h * 40.0);
   float d = length(f - pos) / uDpr;
   float r = 0.55 + 0.6 * b;
@@ -57,7 +60,7 @@ float stars(vec2 fc) {
     float hseg = clamp(dot(pa, ba) / max(dot(ba, ba), 1e-3), 0.0, 1.0);
     float d = length(pa - ba * hseg) / uDpr;
     float fade = sin(3.14159 * tt / 0.9);
-    s += hseg * hseg * fade * exp(-d * d / 0.9) * 0.9;
+    s += hseg * hseg * fade * exp(-d * d / 0.9) * 0.9 * step(0.99, uReveal);
   }
   return s;
 }
@@ -82,7 +85,8 @@ function compile(gl: WebGL2RenderingContext, type: number, src: string) {
   return sh;
 }
 
-export function StarField() {
+/** reveal — необязательная ссылка на 0…1: звёзды зажигаются по мере того, как небо темнеет. */
+export function StarField({ reveal }: { reveal?: RefObject<number> } = {}) {
   const ref = useRef<HTMLCanvasElement>(null);
 
   useEffect(() => {
@@ -108,6 +112,7 @@ export function StarField() {
     const uDpr = gl.getUniformLocation(prog, "uDpr");
     const uTime = gl.getUniformLocation(prog, "uTime");
     const uPar = gl.getUniformLocation(prog, "uPar");
+    const uReveal = gl.getUniformLocation(prog, "uReveal");
 
     const reduce = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
     let w = 1;
@@ -153,6 +158,7 @@ export function StarField() {
       gl.uniform1f(uDpr, dpr);
       gl.uniform1f(uTime, reduce ? 0 : (now - t0) / 1000);
       gl.uniform2f(uPar, reduce ? 0 : par.x, reduce ? 0 : par.y);
+      gl.uniform1f(uReveal, reveal ? reveal.current : 1);
       gl.clearColor(0, 0, 0, 0);
       gl.clear(gl.COLOR_BUFFER_BIT);
       gl.drawArrays(gl.TRIANGLES, 0, 3);
@@ -170,7 +176,7 @@ export function StarField() {
       gl.deleteShader(vs);
       gl.deleteShader(fs);
     };
-  }, []);
+  }, [reveal]);
 
   return <canvas ref={ref} aria-hidden className="pointer-events-none absolute inset-0 h-full w-full" />;
 }
