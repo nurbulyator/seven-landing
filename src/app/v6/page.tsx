@@ -5,13 +5,13 @@ import { PageGL } from "@/components/v3/gl/PageGL";
 import { HeroV3 } from "@/components/v3/hero/HeroV3";
 import { DirectionsV3 } from "@/components/v3/sections/DirectionsV3";
 import { FactsV3 } from "@/components/v3/sections/FactsV3";
-import { IntroV3 } from "@/components/v3/sections/IntroV3";
 import { NumbersV3 } from "@/components/v3/sections/NumbersV3";
 import { OutroV3 } from "@/components/v3/sections/OutroV3";
 import { ReelV3 } from "@/components/v3/sections/ReelV3";
 import { ProductsV4 } from "@/components/v4/ProductsV4";
-import { ribbonRoute } from "@/components/v4/ribbonRoute";
 import { HeaderV6 } from "@/components/v6/HeaderV6";
+import { IntroV6 } from "@/components/v6/IntroV6";
+import { ribbonRoute } from "@/components/v6/ribbonRoute";
 import { WorldV6 } from "@/components/v6/WorldV6";
 
 export const metadata: Metadata = {
@@ -29,7 +29,7 @@ export default function V6Page() {
       <HeaderV6 />
       <main>
         <HeroV3 />
-        <IntroV3 />
+        <IntroV6 />
         <ReelV3 />
         <NumbersV3 sheet />
         <ProductsV4 form="points" />

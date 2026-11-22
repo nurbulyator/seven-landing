@@ -520,6 +520,7 @@ export function PageGL({ ribbon: steps, children }: { ribbon: RibbonStep[]; chil
 
     const toGL = (x: number, y: number, out: THREE.Vector2) => out.set(x - vw / 2, vh / 2 - y);
     const pushState = new WeakMap<HTMLElement, { x: number; y: number }>();
+    const nudgeState = new WeakMap<HTMLElement, number>();
     const clock = new THREE.Clock();
     let raf = 0;
 
@@ -676,6 +677,40 @@ export function PageGL({ ribbon: steps, children }: { ribbon: RibbonStep[]; chil
           const ny = prev.y + (ty - prev.y) * 0.15;
           pushState.set(el, { x: nx, y: ny });
           el.style.transform = `translate3d(${nx}px,${ny}px,0)`;
+        });
+      }
+
+      // ── строки, которые лента сдвигает целиком (data-nudge = сила, px) ──
+      // Когда лента проходит сквозь строку, строка мягко отъезжает от места прохода вбок —
+      // вся сразу, слова не разъезжаются. Место прохода считаем по исходному положению строки.
+      if (ribbon) {
+        const s = ribbon.samples;
+        document.querySelectorAll<HTMLElement>("[data-nudge]").forEach((line) => {
+          const r = line.getBoundingClientRect();
+          if (r.bottom < -50 || r.top > vh + 50) return;
+          const prev = nudgeState.get(line) ?? 0;
+          const left = r.left - prev;
+          const right = r.right - prev;
+          const cy = r.top + r.height / 2;
+          let best = 1e9;
+          let bx = 0;
+          for (let i = 0; i < s.length; i += 3) {
+            if (s[i + 2] < tail || s[i + 2] > head) continue;
+            const px = s[i] + vw / 2;
+            if (px < left || px > right) continue;
+            const d = Math.abs(vh / 2 - s[i + 1] - view - cy);
+            if (d < best) {
+              best = d;
+              bx = px;
+            }
+          }
+          const R = r.height * 0.75;
+          const k = best < R ? (1 - best / R) ** 1.5 : 0;
+          const dir = bx < (left + right) / 2 ? 1 : -1;
+          const goal = dir * k * (parseFloat(line.dataset.nudge ?? "") || 40);
+          const x = prev + (goal - prev) * 0.1;
+          nudgeState.set(line, x);
+          line.style.transform = `translate3d(${x}px,0,0)`;
         });
       }
 
