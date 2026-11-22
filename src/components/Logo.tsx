@@ -47,3 +47,6 @@ export function Logo({ className, title = "Seven Hills of Kazakhstan" }: LogoPro
 
 /** Только знак «7»: внешняя рамка и малая «7». */
 export const SEVEN_PATH = SEVEN;
+
+/** Контуры букв надписи (10 — SEVEN HILLS, затем 12 — OF KAZAKHSTAN), сдвинуты на −43,12 по Y. */
+export const WORDMARK_PATHS: readonly string[] = WORDMARK;

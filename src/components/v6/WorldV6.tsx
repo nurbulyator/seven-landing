@@ -5,6 +5,7 @@ import * as THREE from "three";
 
 import { useTheme } from "@/components/ThemeToggle";
 import { StarField } from "@/components/v3/StarField";
+import { LogoReveal } from "@/components/v6/LogoReveal";
 import { worldV3 } from "@/content/v3";
 import { clamp01, sectionProgress } from "@/lib/scroll";
 
@@ -15,7 +16,9 @@ import { clamp01, sectionProgress } from "@/lib/scroll";
  * (у горизонта светлее дольше), Земля уходит вниз и собирается в глобус, звёзды зажигаются
  * по одной — первыми самые яркие. Дальше как в /v3: Казахстан → дуга в Дубай → дуга в Чехию → итог.
  * Выход — «посадка»: камера опускается к Астане, небо светлеет обратно до цвета страницы,
- * звёзды гаснут, глобус растворяется — следующий блок начинается на обычном фоне без шва.
+ * звёзды гаснут, глобус растворяется — и тут же, без пустого экрана, собирается логотип
+ * Seven Hills of Kazakhstan (LogoReveal, играет по времени). Следующий блок начинается на
+ * обычном фоне без шва.
  */
 
 const DEG = Math.PI / 180;
@@ -60,6 +63,8 @@ const DOTS_LIGHT = new THREE.Vector3(0.32, 0.4, 0.42);
 const DOTS_DARK = new THREE.Vector3(0.55, 0.66, 0.68);
 const INK_LIGHT = hex("#111618");
 const INK_DARK = hex("#f3f5f5");
+/** Фирменный серый надписи логотипа на светлом фоне. */
+const LOGO_GRAY = hex("#737374");
 /** Старт: камера близко, Земля опущена — над нижним краем экрана виден только её горизонт. */
 const LIFT_Y = -1.22;
 const LIFT_Z = 1.9;
@@ -92,11 +97,11 @@ const dotsVertex = /* glsl */ `
     vec3 n = normalize(mat3(modelMatrix) * position);
     float front = smoothstep(-0.15, 0.55, n.z);
     vec3 teal = vec3(0.0, 0.73, 0.77);
-    vec3 amber = vec3(1.0, 0.71, 0.25);
+    vec3 mint = vec3(0.56, 0.91, 0.93); // ОАЭ и Чехия — светлая бирюза, Казахстан — насыщенная
     float g = aKind == 1.0 ? uGlow.x : aKind == 2.0 ? uGlow.y : aKind == 3.0 ? uGlow.z : 0.0;
     // страны видны всегда (слегка), при фокусе — ярко
     g = aKind > 0.5 ? max(g, 0.3) : 0.0;
-    vColor = mix(uBase, aKind == 1.0 ? teal : amber, g);
+    vColor = mix(uBase, aKind == 1.0 ? teal : mint, g);
     vAlpha = front * mix(uBaseAlpha, 1.0, g);
     gl_PointSize = uSize * (aKind > 0.5 ? 0.9 + g * 0.35 : 1.0) / -mv.z;
     gl_Position = projectionMatrix * mv;
@@ -140,6 +145,7 @@ export function WorldV6() {
   const wordsRef = useRef<(HTMLSpanElement | null)[]>([]);
   const labelsRef = useRef<(HTMLDivElement | null)[]>([]);
   const titleRef = useRef<HTMLDivElement>(null);
+  const logoRef = useRef<HTMLDivElement>(null);
   const stageRef = useRef<HTMLDivElement>(null);
   const skyRef = useRef<HTMLDivElement>(null);
   const starsRef = useRef(0);
@@ -228,7 +234,7 @@ export function WorldV6() {
         globe.add(new THREE.Points(g, dotsMat));
         // контуры трёх стран — тонкие трубки по границе
         for (const [mark, rings] of Object.entries(outlines)) {
-          const mat = new THREE.MeshBasicMaterial({ color: mark === "1" ? 0x00bbc4 : 0xffb541, transparent: true, opacity: 0.5, depthWrite: false });
+          const mat = new THREE.MeshBasicMaterial({ color: mark === "1" ? 0x00bbc4 : 0x8fe8ed, transparent: true, opacity: 0.5, depthWrite: false });
           outlineMats[Number(mark) - 1] = mat;
           for (const ring of rings) {
             const pts: THREE.Vector3[] = [];
@@ -241,7 +247,9 @@ export function WorldV6() {
       })
       .catch(() => {});
 
-    // Дуги из Астаны
+    // Дуги из Астаны: тонкая трубка, а когда дуга дошла до города — плоская стрелка-наконечник,
+    // лежащая на поверхности глобуса остриём по ходу дуги (как нарисованная на карте)
+    const ARC_R = 0.0028;
     const [kz, ae, cz] = worldV3.places;
     const astana = toVec(kz.lat, kz.lon);
     const arcs = [ae, cz].map((p) => {
@@ -259,16 +267,33 @@ export function WorldV6() {
         blendDst: THREE.OneMinusSrcAlphaFactor,
         uniforms: { uProgress: { value: 0 } },
       });
-      const mesh = new THREE.Mesh(new THREE.TubeGeometry(curve, 96, 0.006, 8, false), mat);
+      const mesh = new THREE.Mesh(new THREE.TubeGeometry(curve, 96, ARC_R, 8, false), mat);
       globe.add(mesh);
-      return mat;
+      // треугольник в своей плоскости XY: остриё в начале координат, смотрит по +X
+      const tri = new THREE.BufferGeometry();
+      tri.setAttribute("position", new THREE.Float32BufferAttribute([0, 0, 0, -0.034, 0.014, 0, -0.034, -0.014, 0], 3));
+      const arrow = new THREE.Mesh(
+        tri,
+        new THREE.MeshBasicMaterial({ color: 0x3fd3db, transparent: true, depthWrite: false, side: THREE.DoubleSide }),
+      );
+      // остриё чуть не доходит до города, чтобы не прятаться под кольцом-пульсом; плоскость — касательная к сфере
+      const tip = curve.getPoint(0.975);
+      const n = tip.clone().normalize();
+      const fwd = curve.getTangent(0.975);
+      fwd.sub(n.clone().multiplyScalar(fwd.dot(n))).normalize();
+      const side = new THREE.Vector3().crossVectors(n, fwd);
+      arrow.matrixAutoUpdate = false;
+      arrow.matrix.makeBasis(fwd, side, n).setPosition(tip.multiplyScalar(1.004));
+      arrow.visible = false;
+      globe.add(arrow);
+      return { mat, arrow };
     });
 
     // Метки городов: кольцо-пульс
     const rings = worldV3.places.map((p, i) => {
       const m = new THREE.Mesh(
         new THREE.RingGeometry(0.018, 0.026, 48),
-        new THREE.MeshBasicMaterial({ color: i === 0 ? 0x3fd3db : 0xffc974, transparent: true, depthWrite: false }),
+        new THREE.MeshBasicMaterial({ color: i === 0 ? 0x3fd3db : 0xa6f0f3, transparent: true, depthWrite: false }),
       );
       const v = toVec(p.lat, p.lon, 1.006);
       m.position.copy(v);
@@ -301,7 +326,7 @@ export function WorldV6() {
       if (rect.bottom < 0 || rect.top > window.innerHeight) return;
       const raw = sectionProgress(section);
       const p = Math.min(1, raw / FLIGHT);
-      const land = smooth(0.87, 0.99, raw);
+      const land = smooth(0.85, 0.95, raw);
       const t = clock.getElapsedTime();
 
       // 0. набор высоты: небо темнеет — зенит раньше, горизонт позже; звёзды — во второй половине.
@@ -359,7 +384,8 @@ export function WorldV6() {
       const fit = Math.max(1, 0.95 / camera.aspect);
       camera.position.z = mix(mix(mix(zoom, 3.0, toAe), 3.6, out), LAND_Z, land) * fit;
       // у поверхности глобус растворяется в светлом небе — к концу секции на экране только фон страницы
-      canvas.style.opacity = String(1 - smooth(0.5, 1, land));
+      // гаснет быстро, как только начинает собираться логотип (land > 0,5), чтобы не мешать буквам
+      canvas.style.opacity = String(1 - smooth(0.4, 0.75, land));
       const leave = 1 - smooth(0, 0.3, land);
 
       const glow = dotsMat.uniforms.uGlow.value as THREE.Vector3;
@@ -367,8 +393,13 @@ export function WorldV6() {
       outlineMats.forEach((m, i) => {
         if (m) m.opacity = 0.35 + 0.65 * glow.getComponent(i);
       });
-      arcs[0].uniforms.uProgress.value = clamp01((p - 0.42) / 0.12) * 1.02;
-      arcs[1].uniforms.uProgress.value = clamp01((p - 0.64) / 0.12) * 1.02;
+      [clamp01((p - 0.42) / 0.12), clamp01((p - 0.64) / 0.12)].forEach((k, i) => {
+        const a = arcs[i];
+        a.mat.uniforms.uProgress.value = k * 1.02;
+        const shown = clamp01((k - 0.9) / 0.1);
+        a.arrow.visible = shown > 0;
+        (a.arrow.material as THREE.MeshBasicMaterial).opacity = shown * leave;
+      });
       rings.forEach((r, i) => {
         const on = i === 0 ? kzIn : glow.getComponent(i);
         const pulse = 1 + ((t * 0.8 + i * 0.3) % 1) * 1.6;
@@ -387,14 +418,24 @@ export function WorldV6() {
         const x = (tmp.x * 0.5 + 0.5) * canvas.clientWidth;
         const y = (-tmp.y * 0.5 + 0.5) * canvas.clientHeight;
         const on = (i === 0 ? kzIn : glow.getComponent(i)) * clamp01(facingCam * 4) * leave;
-        // у правого края подпись перекидываем влево от точки, чтобы не уходила за экран
-        const flip = x > canvas.clientWidth * 0.58;
+        // Казахстан — всегда справа от точки, ОАЭ и Чехия — слева (дуга приходит к ним справа,
+        // из Астаны, и не перечёркивает подпись); на другую сторону — только если не влезает в экран
+        const w = el.offsetWidth + 48;
+        const flip = i === 0 ? x + w > canvas.clientWidth : x - w > 0;
         el.style.transform = `translate(${x}px, ${y}px)${flip ? " translateX(-100%) translateX(-3rem)" : ""}`;
         el.style.opacity = String(on);
       });
       if (titleRef.current) {
         titleRef.current.style.opacity = String(out * leave);
         titleRef.current.style.transform = `translateY(${(1 - out) * 30 - (1 - leave) * 40}px)`;
+      }
+      // логотип собирается, как только глобус начал растворяться над Казахстаном; надпись —
+      // белая на тёмном небе, фирменная серая на светлом
+      const logo = logoRef.current;
+      if (logo) {
+        const on = land > 0.5 ? "true" : "false";
+        if (logo.dataset.on !== on) logo.dataset.on = on;
+        logo.style.color = css(mixRgb(dark ? INK_DARK : LOGO_GRAY, INK_DARK, smooth(0.35, 0.6, night)));
       }
       renderer.render(scene, camera);
     };
@@ -417,6 +458,7 @@ export function WorldV6() {
   return (
     <section
       id="world"
+      data-ribbon="world"
       ref={sectionRef}
       aria-label="География"
       className="relative h-[670svh] bg-bg text-white"
@@ -454,13 +496,17 @@ export function WorldV6() {
             className="pointer-events-none absolute top-0 left-0 opacity-0"
           >
             <div className="ml-6 -translate-y-1/2 rounded-2xl bg-white/10 px-5 py-3.5 backdrop-blur-md">
-              <p className={`text-[clamp(1.3rem,2vw,1.8rem)] leading-none font-semibold tracking-[-0.02em] ${i === 0 ? "text-[#3fd3db]" : "text-[#ffc974]"}`}>
+              <p className={`text-[clamp(1.3rem,2vw,1.8rem)] leading-none font-semibold tracking-[-0.02em] ${i === 0 ? "text-[#3fd3db]" : "text-[#a6f0f3]"}`}>
                 {place.name}
               </p>
               <p className="mt-1.5 max-w-[16rem] text-[0.92rem] leading-snug text-white/70">{place.note}</p>
             </div>
           </div>
         ))}
+
+        <div className="pointer-events-none absolute inset-0 grid place-items-center px-6">
+          <LogoReveal ref={logoRef} className="w-[min(78vw,54rem)]" />
+        </div>
 
         <div ref={titleRef} className="absolute inset-x-0 bottom-[9svh] px-5 text-center opacity-0">
           <h2 className="mx-auto max-w-[56rem] text-[clamp(2rem,5vw,4.4rem)] leading-[1.02] font-semibold tracking-[-0.04em]">

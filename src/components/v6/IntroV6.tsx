@@ -17,7 +17,7 @@ export function IntroV6() {
       <div className="mx-auto grid w-full max-w-[90rem] gap-12 lg:grid-cols-12">
         <h2
           data-ribbon="intro-title"
-          className="relative z-[6] text-right text-[clamp(2.8rem,7.4vw,7.2rem)] leading-[0.98] font-semibold tracking-[-0.045em] lg:col-span-8 lg:col-start-1"
+          className="relative z-[6] text-right text-[clamp(2.8rem,7.4vw,7.2rem)] leading-[0.98] font-semibold tracking-[-0.045em] lg:col-span-7 lg:col-start-1"
         >
           {introV3.title.map((line, i) => (
             // строка едет за прокруткой (data-shift), а лента, проходя сквозь неё, ещё чуть сдвигает её (data-nudge)
