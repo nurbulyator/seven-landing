@@ -462,4 +462,92 @@ body {
 }
 .products-v4[data-flood] li[data-hover] .product-point {
   border-color: rgb(243 245 245 / 0.25);
+  /* у таблетки свой цвет (text-fg/70) — в светлой теме он тёмный и тонул в заливке */
+  color: rgb(243 245 245 / 0.78);
+}
+
+/* /v5+, продукты: подробности под «таблетками». Абзац и пустые «слоты» шагов (линия и номер) всплывают
+   у активного продукта; при наведении на название слоты заполняются по одному — линия прочерчивается
+   слева, текст шага выезжает снизу. */
+.products-v4 .product-about,
+.products-v4 .product-steps-label,
+.products-v4 .product-steps {
+  transition:
+    opacity 0.6s ease,
+    transform 0.8s cubic-bezier(0.22, 1, 0.36, 1),
+    color 0.35s ease;
+}
+.products-v4[data-live] [data-product]:not([data-active]):not([data-hover]) .product-about,
+.products-v4[data-live] [data-product]:not([data-active]):not([data-hover]) .product-steps-label,
+.products-v4[data-live] [data-product]:not([data-active]):not([data-hover]) .product-steps {
+  opacity: 0;
+  transform: translateY(0.8rem);
+}
+.products-v4 .product-steps {
+  transition-delay: 0.08s;
+}
+.products-v4[data-flood] [data-product]:not([data-hover]) .product-more {
+  opacity: 0;
+}
+.products-v4[data-flood] [data-product][data-hover] .product-about {
+  color: rgb(243 245 245 / 0.88);
+}
+.products-v4[data-flood] [data-product][data-hover] .product-steps-label {
+  color: rgb(243 245 245 / 0.5);
+}
+.products-v4 .product-hint {
+  transition: opacity 0.3s ease;
+}
+.products-v4 [data-hover] .product-hint {
+  opacity: 0;
+}
+@media (hover: none) {
+  .products-v4 .product-hint {
+    display: none;
+  }
+}
+.products-v4 .product-step {
+  transition: border-color 0.35s ease;
+}
+.products-v4[data-flood] [data-hover] .product-step {
+  border-color: rgb(243 245 245 / 0.12);
+}
+.products-v4 .product-step-num {
+  color: var(--muted);
+  transition: color 0.35s ease;
+}
+.products-v4 [data-hover] .product-step-num {
+  color: var(--ink);
+}
+.products-v4 .product-step-text {
+  opacity: 0;
+  transform: translateY(0.9rem);
+  transition:
+    opacity 0.25s ease,
+    transform 0.25s ease;
+}
+.products-v4 [data-hover] .product-step-text {
+  opacity: 1;
+  transform: none;
+  color: rgb(243 245 245 / 0.9);
+  transition:
+    opacity 0.55s ease calc(0.18s + var(--i) * 0.09s),
+    transform 0.8s cubic-bezier(0.22, 1, 0.36, 1) calc(0.18s + var(--i) * 0.09s);
+}
+.products-v4 .product-step-line {
+  background: rgb(243 245 245 / 0.4);
+  transform: scaleX(0);
+  transition: transform 0.25s ease;
+}
+.products-v4 [data-hover] .product-step-line {
+  transform: scaleX(1);
+  transition: transform 0.9s cubic-bezier(0.22, 1, 0.36, 1) calc(0.1s + var(--i) * 0.09s);
+}
+@media (prefers-reduced-motion: reduce) {
+  .products-v4 .product-step-text,
+  .products-v4 .product-about,
+  .products-v4 .product-steps-label,
+  .products-v4 .product-steps {
+    transform: none !important;
+  }
 }

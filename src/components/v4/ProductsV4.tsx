@@ -14,7 +14,8 @@ import { productsV4 } from "@/content/v4";
  * Наведение на название: буквы слева направо «перекатываются» — каждая опрокидывается вперёд-вниз,
  * а на её место сверху выкатывается копия (см. roll), и название окрашивается в цвет продукта;
  * из центра 3D-формы круг заливает экран тёмным цветом продукта, а форма сразу перетекает
- * в этот продукт и темнеет. Курсор ушёл — заливка тает, буквы не крутятся.
+ * в этот продукт и темнеет; под «таблетками» выезжают шаги «Как работает». Пока курсор в колонке текста
+ * этого продукта (от названия до шагов), заливка держится — описание можно дочитать; ушёл — заливка тает.
  * На сенсорных экранах то же включается касанием и гаснет при прокрутке.
  */
 type Props = {
@@ -118,6 +119,28 @@ export function ProductsV4({ form = "sdf" }: Props) {
     };
 
     const names = rows.map((row) => row.querySelector<HTMLElement>("[data-name]"));
+    const mores = rows.map((row) => row.querySelector<HTMLElement>("[data-more]"));
+    /** Зона, где наведение держится: от названия до блока «подробнее», по ширине — самый широкий из них. */
+    const inZone = (i: number, x: number, y: number) => {
+      const name = names[i];
+      if (!name) return false;
+      const a = name.getBoundingClientRect();
+      const more = mores[i]?.getBoundingClientRect();
+      // на телефоне блок скрыт (нулевой прямоугольник) — тогда зона только название
+      const b = more && more.height > 0 ? more : a;
+      const pad = 12;
+      return x >= Math.min(a.left, b.left) - pad && x <= Math.max(a.right, b.right) + pad && y >= a.top - pad && y <= b.bottom + pad;
+    };
+    let pointerX = -1;
+    let pointerY = -1;
+    const onPointerMove = (e: PointerEvent) => {
+      if (e.pointerType !== "mouse") return;
+      pointerX = e.clientX;
+      pointerY = e.clientY;
+      if (hover >= 0 && !hoverByTouch && !inZone(hover, pointerX, pointerY)) endHover();
+    };
+    window.addEventListener("pointermove", onPointerMove, { passive: true });
+
     const cleanups = names.map((name, i) => {
       if (!name) return () => {};
       const onEnter = (e: PointerEvent) => {
@@ -125,8 +148,9 @@ export function ProductsV4({ form = "sdf" }: Props) {
         hoverByTouch = false;
         startHover(i);
       };
+      // вниз к описанию — держим (дальше решает onPointerMove), в сторону или вверх — гасим сразу
       const onLeave = (e: PointerEvent) => {
-        if (e.pointerType === "mouse" && hover === i) endHover();
+        if (e.pointerType === "mouse" && hover === i && !inZone(i, e.clientX, e.clientY)) endHover();
       };
       const onClick = () => {
         // мышь уже включила всё наведением; касание — включает и выключает
@@ -190,7 +214,7 @@ export function ProductsV4({ form = "sdf" }: Props) {
       }
       // прокрутка увела название из-под курсора (или пальца) — заливку гасим
       if (hover >= 0) {
-        const gone = hoverByTouch ? Math.abs(window.scrollY - hoverScrollY) > 80 : !names[hover]?.matches(":hover");
+        const gone = hoverByTouch ? Math.abs(window.scrollY - hoverScrollY) > 80 : !inZone(hover, pointerX, pointerY);
         if (gone) endHover();
       }
       applyMorph();
@@ -204,6 +228,7 @@ export function ProductsV4({ form = "sdf" }: Props) {
     return () => {
       window.removeEventListener("scroll", schedule);
       window.removeEventListener("resize", schedule);
+      window.removeEventListener("pointermove", onPointerMove);
       if (raf) cancelAnimationFrame(raf);
       cleanups.forEach((off) => off());
       timers.forEach((t) => window.clearTimeout(t));
@@ -286,6 +311,26 @@ export function ProductsV4({ form = "sdf" }: Props) {
                     </li>
                   ))}
                 </ul>
+              )}
+              {form === "points" && (
+                // подробности: абзац виден у активного продукта, шаги выезжают при наведении на название;
+                // на телефоне блока нет — там под текстом стоит 3D-форма
+                <div data-more className="product-more mt-12 hidden max-w-[50rem] sm:block lg:w-[58%]">
+                  <p className="product-about max-w-[34rem] text-[1.08rem] leading-relaxed text-fg/80">{item.about}</p>
+                  <p className="product-steps-label mt-7 text-[0.7rem] font-medium tracking-[0.08em] text-muted uppercase">
+                    {productsV4.stepsLabel}
+                    <span className="product-hint"> — наведите на название</span>
+                  </p>
+                  <ol className="product-steps mt-3 grid grid-cols-3 gap-5">
+                    {item.steps.map((step, k) => (
+                      <li key={step} className="product-step relative border-t border-line pt-3" style={{ "--i": k } as CSSProperties}>
+                        <span aria-hidden className="product-step-line absolute inset-x-0 -top-px h-px origin-left" />
+                        <span className="product-step-num block text-[0.72rem] font-medium tabular-nums">{String(k + 1).padStart(2, "0")}</span>
+                        <span className="product-step-text mt-1 block text-[0.92rem] leading-snug">{step}</span>
+                      </li>
+                    ))}
+                  </ol>
+                </div>
               )}
             </li>
           ))}
