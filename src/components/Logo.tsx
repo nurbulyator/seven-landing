@@ -1,4 +1,4 @@
-/** Логотип Seven Hills of Kazakhstan из фирменного SVG. Знак «7» — бирюзовый, надпись — цветом текста. */
+/** Логотип Seven Hills of Kazakhstan из фирменного SVG. Знак «7» — бирюзовый, надпись — фирменным серым (--logo-ink по теме). */
 
 const SEVEN = "M0,56.8V0h203.3v61.3l-2.21,4.78-127.27,219.84h-14.55L190.01,60.25l.77-1.69V12.52H12.52v44.29H0ZM58.64,168.83l55.98-99.51h-55.98v-12.52h77.14l-62.86,112.02h-14.28Z";
 
@@ -36,7 +36,7 @@ export function Logo({ className, title = "Seven Hills of Kazakhstan" }: LogoPro
   return (
     <svg viewBox="0 0 1110.5 287.96" role="img" aria-label={title} className={className}>
       <path d={SEVEN} fill="var(--logo-mark, #00bbc4)" />
-      <g fill="currentColor" transform="translate(0 -43.12)">
+      <g fill="var(--logo-ink, currentColor)" transform="translate(0 -43.12)">
         {WORDMARK.map((d) => (
           <path key={d.slice(0, 24)} d={d} />
         ))}
