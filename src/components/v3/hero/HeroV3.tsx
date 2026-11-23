@@ -5,6 +5,7 @@ import { useSyncExternalStore } from "react";
 import { useTheme } from "@/components/ThemeToggle";
 import { FluidCanvas } from "@/components/v3/hero/FluidCanvas";
 import { type BackdropStyle, HeroBackdrop } from "@/components/v3/hero/HeroBackdrop";
+import { type ReactBitsKey, ReactBitsBackdrop, reactBitsBackdrops } from "@/components/v3/hero/ReactBitsBackdrop";
 import { ReliefCanvas } from "@/components/v3/hero/ReliefCanvas";
 import { SevenFrames } from "@/components/v3/SevenFrames";
 import { heroV3 } from "@/content/v3";
@@ -39,13 +40,15 @@ function setVariant(v: Variant) {
   listeners.forEach((l) => l());
 }
 
-/** Живой фон за знаком — пока сравниваем подачи; выбор хранится в браузере зрителя. */
-const backdrops = [
+/** Живой фон за знаком — пока сравниваем подачи (свои и React Bits); выбор хранится в браузере зрителя. */
+const ownBackdrops = [
   { key: "none", label: "Нет" },
   { key: "contours", label: "Холмы" },
   { key: "dots", label: "Точки" },
 ] as const;
+const backdrops = [...ownBackdrops, ...reactBitsBackdrops];
 type Backdrop = (typeof backdrops)[number]["key"];
+const isReactBits = (b: Backdrop): b is ReactBitsKey => reactBitsBackdrops.some((r) => r.key === b);
 const BG_KEY = "v3-hero-bg";
 const bgListeners = new Set<() => void>();
 function readBackdrop(): Backdrop {
@@ -53,7 +56,7 @@ function readBackdrop(): Backdrop {
   try {
     saved = localStorage.getItem(BG_KEY);
   } catch {}
-  return backdrops.find((f) => f.key === saved)?.key ?? "contours";
+  return backdrops.find((f) => f.key === saved)?.key ?? "softAurora";
 }
 function subscribeBackdrop(listener: () => void) {
   bgListeners.add(listener);
@@ -68,7 +71,7 @@ function setBackdrop(f: Backdrop) {
 
 export function HeroV3() {
   const variant = useSyncExternalStore<Variant>(subscribe, readVariant, () => "seven");
-  const backdrop = useSyncExternalStore<Backdrop>(subscribeBackdrop, readBackdrop, () => "contours");
+  const backdrop = useSyncExternalStore<Backdrop>(subscribeBackdrop, readBackdrop, () => "softAurora");
   const theme = useTheme();
   const darkCard = variant === "flow" || theme === "dark";
 
@@ -82,9 +85,10 @@ export function HeroV3() {
             : "bg-[radial-gradient(120%_90%_at_70%_40%,#ffffff_0%,#e4eaea_70%)]"
         }`}
       >
-        {variant === "seven" && backdrop !== "none" && (
+        {variant === "seven" && (backdrop === "contours" || backdrop === "dots") && (
           <HeroBackdrop styleKey={backdrop as BackdropStyle} dark={darkCard} />
         )}
+        {variant === "seven" && isReactBits(backdrop) && <ReactBitsBackdrop name={backdrop} dark={darkCard} />}
         {variant === "seven" && (
           <SevenFrames
             ribbonKey="seven-hero"
@@ -142,25 +146,39 @@ export function HeroV3() {
       {/* переключатели для сравнения вариантов: фон и первый экран
           (справа под шапкой, чтобы не закрывали содержимое) */}
       <div className="fixed top-[4.6rem] right-4 z-50 flex flex-col items-end gap-2 text-[0.8rem] text-white">
-        <div
-          role="radiogroup"
-          aria-label="Фон первого экрана"
-          className="flex items-center gap-1 rounded-full bg-[#0b1214]/85 p-1 shadow-lg backdrop-blur-xl"
-        >
+        <label className="flex items-center gap-1 rounded-full bg-[#0b1214]/85 p-1 shadow-lg backdrop-blur-xl">
           <span className="hidden px-3 text-white/60 sm:inline">Фон</span>
-          {backdrops.map((f) => (
-            <button
-              key={f.key}
-              type="button"
-              role="radio"
-              aria-checked={backdrop === f.key}
-              onClick={() => setBackdrop(f.key)}
-              className="cursor-pointer rounded-full px-3.5 py-1.5 transition-colors hover:bg-white/10 aria-checked:bg-white aria-checked:text-[#0b1214]"
+          <span className="relative">
+            <select
+              aria-label="Фон первого экрана"
+              value={backdrop}
+              onChange={(e) => setBackdrop(e.target.value as Backdrop)}
+              className="cursor-pointer appearance-none rounded-full bg-white py-1.5 pr-8 pl-3.5 text-[#0b1214] outline-none focus-visible:ring-2 focus-visible:ring-teal"
             >
-              {f.label}
-            </button>
-          ))}
-        </div>
+              <optgroup label="Свои">
+                {ownBackdrops.map((f) => (
+                  <option key={f.key} value={f.key}>
+                    {f.label}
+                  </option>
+                ))}
+              </optgroup>
+              <optgroup label="React Bits">
+                {reactBitsBackdrops.map((f) => (
+                  <option key={f.key} value={f.key}>
+                    {f.label}
+                  </option>
+                ))}
+              </optgroup>
+            </select>
+            <svg
+              aria-hidden
+              viewBox="0 0 12 12"
+              className="pointer-events-none absolute top-1/2 right-3 size-3 -translate-y-1/2 text-[#0b1214]"
+            >
+              <path d="M2.5 4.5 6 8l3.5-3.5" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" />
+            </svg>
+          </span>
+        </label>
         <div
           role="radiogroup"
           aria-label="Версия первого экрана"
