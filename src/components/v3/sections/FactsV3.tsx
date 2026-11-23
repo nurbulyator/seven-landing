@@ -1,8 +1,15 @@
+import type { ReactNode } from "react";
+
 import { trust } from "@/content/site";
 import { factsV3 } from "@/content/v3";
 
+type Props = {
+  /** Чем заменить бегущую строку с названиями вендоров (в /v6 — лента логотипов PartnersLoop). */
+  vendors?: ReactNode;
+};
+
 /** Почему нам доверяют: четыре крупных факта и бегущая строка вендоров. */
-export function FactsV3() {
+export function FactsV3({ vendors: vendorsSlot }: Props = {}) {
   const vendors = [...trust.vendors, ...trust.vendors];
   return (
     <section id="trust" data-ribbon="facts" className="overflow-hidden py-24 lg:py-32">
@@ -21,16 +28,20 @@ export function FactsV3() {
           ))}
         </ul>
       </div>
-      <div className="mt-16 lg:mt-20" aria-label="Работаем с продуктами вендоров">
-        <div className="marquee flex w-max gap-[0.5em] text-[clamp(2.8rem,8vw,7rem)] leading-none font-bold tracking-[-0.045em] text-fg/15">
-          {vendors.map((vendor, i) => (
-            <span key={`${vendor}-${i}`} aria-hidden={i >= trust.vendors.length} className="flex gap-[0.5em]">
-              {vendor}
-              <span className="text-accent/60">·</span>
-            </span>
-          ))}
+      {vendorsSlot ? (
+        <div className="mt-16 lg:mt-20">{vendorsSlot}</div>
+      ) : (
+        <div className="mt-16 lg:mt-20" aria-label="Работаем с продуктами вендоров">
+          <div className="marquee flex w-max gap-[0.5em] text-[clamp(2.8rem,8vw,7rem)] leading-none font-bold tracking-[-0.045em] text-fg/15">
+            {vendors.map((vendor, i) => (
+              <span key={`${vendor}-${i}`} aria-hidden={i >= trust.vendors.length} className="flex gap-[0.5em]">
+                {vendor}
+                <span className="text-accent/60">·</span>
+              </span>
+            ))}
+          </div>
         </div>
-      </div>
+      )}
     </section>
   );
 }

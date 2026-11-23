@@ -9,6 +9,7 @@ import { NumbersV3 } from "@/components/v3/sections/NumbersV3";
 import { ProductsV4 } from "@/components/v4/ProductsV4";
 import { HeaderV6 } from "@/components/v6/HeaderV6";
 import { IntroV6 } from "@/components/v6/IntroV6";
+import { PartnersLoop } from "@/components/v6/PartnersLoop";
 import { ReelV6 } from "@/components/v6/ReelV6";
 import { ribbonRoute } from "@/components/v6/ribbonRoute";
 import { SmoothScroll } from "@/components/v6/SmoothScroll";
@@ -37,7 +38,7 @@ export default function V6Page() {
         <NumbersV3 sheet />
         <ProductsV4 form="points" />
         <DirectionsV3 />
-        <FactsV3 />
+        <FactsV3 vendors={<PartnersLoop />} />
         <WorldV6 />
         <Contact />
       </main>
