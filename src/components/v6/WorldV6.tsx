@@ -5,6 +5,7 @@ import * as THREE from "three";
 
 import { useTheme } from "@/components/ThemeToggle";
 import { StarField } from "@/components/v3/StarField";
+import { createBand, SEVEN_HALF, SEVEN_STROKE } from "@/components/v6/globeRibbon";
 import { LogoReveal } from "@/components/v6/LogoReveal";
 import { worldV3 } from "@/content/v3";
 import { clamp01, sectionProgress } from "@/lib/scroll";
@@ -90,6 +91,7 @@ const dotsVertex = /* glsl */ `
   uniform vec3 uGlow; // яркость Казахстана, ОАЭ, Чехии
   uniform vec3 uBase;
   uniform float uBaseAlpha;
+  uniform float uFade; // 1 — глобус погас (на посадке)
   varying vec3 vColor;
   varying float vAlpha;
   void main() {
@@ -102,7 +104,7 @@ const dotsVertex = /* glsl */ `
     // страны видны всегда (слегка), при фокусе — ярко
     g = aKind > 0.5 ? max(g, 0.3) : 0.0;
     vColor = mix(uBase, aKind == 1.0 ? teal : mint, g);
-    vAlpha = front * mix(uBaseAlpha, 1.0, g);
+    vAlpha = front * mix(uBaseAlpha, 1.0, g) * (1.0 - uFade);
     gl_PointSize = uSize * (aKind > 0.5 ? 0.9 + g * 0.35 : 1.0) / -mv.z;
     gl_Position = projectionMatrix * mv;
   }
@@ -119,25 +121,6 @@ const dotsFragment = /* glsl */ `
   }
 `;
 
-const arcVertex = /* glsl */ `
-  varying float vT;
-  void main() {
-    vT = uv.x;
-    gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
-  }
-`;
-// дуга в бирюзе ленты: светится к голове
-const arcFragment = /* glsl */ `
-  uniform float uProgress;
-  varying float vT;
-  void main() {
-    if (vT > uProgress) discard;
-    float head = smoothstep(uProgress - 0.12, uProgress, vT);
-    vec3 col = mix(vec3(0.0, 0.733, 0.769), vec3(0.78, 0.98, 0.99), head);
-    float a = 0.85 + head * 0.15;
-    gl_FragColor = vec4(col * a, a);
-  }
-`;
 
 export function WorldV6() {
   const sectionRef = useRef<HTMLElement>(null);
@@ -177,8 +160,10 @@ export function WorldV6() {
       new THREE.SphereGeometry(0.995, 64, 64),
       new THREE.ShaderMaterial({
         vertexShader: `varying vec3 vN; void main(){ vN = normalize(normalMatrix * normal); gl_Position = projectionMatrix * modelViewMatrix * vec4(position,1.0); }`,
-        uniforms: { uBody: { value: new THREE.Vector3() } },
-        fragmentShader: `uniform vec3 uBody; varying vec3 vN; void main(){ float rim = pow(1.0 - max(vN.z, 0.0), 3.0); gl_FragColor = vec4(mix(uBody, vec3(0.0,0.6,0.64), rim * 0.5), 1.0); }`,
+        transparent: true,
+        uniforms: { uBody: { value: new THREE.Vector3() }, uAlpha: { value: 1 } },
+        // на посадке тело гаснет (uAlpha), но глубину пишет по-прежнему — обратная сторона остаётся скрытой
+        fragmentShader: `uniform vec3 uBody; uniform float uAlpha; varying vec3 vN; void main(){ float rim = pow(1.0 - max(vN.z, 0.0), 3.0); gl_FragColor = vec4(mix(uBody, vec3(0.0,0.6,0.64), rim * 0.5), uAlpha); }`,
       }),
     );
     body.renderOrder = -1;
@@ -193,8 +178,9 @@ export function WorldV6() {
         blendSrc: THREE.OneFactor,
         blendDst: THREE.OneMinusSrcAlphaFactor,
         vertexShader: `varying vec3 vN; void main(){ vN = normalize(normalMatrix * normal); gl_Position = projectionMatrix * modelViewMatrix * vec4(position,1.0); }`,
+        uniforms: { uFade: { value: 0 } },
         // свечение у края глобуса, к внешнему краю ореола сходит на нет
-        fragmentShader: `varying vec3 vN; void main(){ float i = pow(smoothstep(0.0, 0.55, abs(vN.z)), 2.0) * 0.55; gl_FragColor = vec4(vec3(0.0,0.73,0.77) * i, i); }`,
+        fragmentShader: `uniform float uFade; varying vec3 vN; void main(){ float i = pow(smoothstep(0.0, 0.55, abs(vN.z)), 2.0) * 0.55 * (1.0 - uFade); gl_FragColor = vec4(vec3(0.0,0.73,0.77) * i, i); }`,
       }),
     );
     scene.add(halo);
@@ -212,6 +198,7 @@ export function WorldV6() {
         uGlow: { value: new THREE.Vector3() },
         uBase: { value: (dark ? DOTS_DARK : DOTS_LIGHT).clone() },
         uBaseAlpha: { value: dark ? 0.42 : 0.5 },
+        uFade: { value: 0 },
       },
     });
     let cancelled = false;
@@ -247,47 +234,75 @@ export function WorldV6() {
       })
       .catch(() => {});
 
-    // Дуги из Астаны: тонкая трубка, а когда дуга дошла до города — плоская стрелка-наконечник,
-    // лежащая на поверхности глобуса остриём по ходу дуги (как нарисованная на карте)
-    const ARC_R = 0.0028;
+    // Лента маршрута (вместо дуг): выныривает из-за восточного края глобуса и по ходу прокрутки
+    // летит над поверхностью Астана → Дубай → Прага → обратно к Астане, слегка перекручиваясь
     const [kz, ae, cz] = worldV3.places;
-    const astana = toVec(kz.lat, kz.lon);
-    const arcs = [ae, cz].map((p) => {
-      const end = toVec(p.lat, p.lon);
-      const mid = astana.clone().add(end).multiplyScalar(0.5);
-      mid.normalize().multiplyScalar(1 + astana.distanceTo(end) * 0.45);
-      const curve = new THREE.QuadraticBezierCurve3(astana, mid, end);
-      const mat = new THREE.ShaderMaterial({
-        vertexShader: arcVertex,
-        fragmentShader: arcFragment,
-        transparent: true,
-        depthWrite: false,
-        blending: THREE.CustomBlending,
-        blendSrc: THREE.OneFactor,
-        blendDst: THREE.OneMinusSrcAlphaFactor,
-        uniforms: { uProgress: { value: 0 } },
-      });
-      const mesh = new THREE.Mesh(new THREE.TubeGeometry(curve, 96, ARC_R, 8, false), mat);
-      globe.add(mesh);
-      // треугольник в своей плоскости XY: остриё в начале координат, смотрит по +X
-      const tri = new THREE.BufferGeometry();
-      tri.setAttribute("position", new THREE.Float32BufferAttribute([0, 0, 0, -0.034, 0.014, 0, -0.034, -0.014, 0], 3));
-      const arrow = new THREE.Mesh(
-        tri,
-        new THREE.MeshBasicMaterial({ color: 0x3fd3db, transparent: true, depthWrite: false, side: THREE.DoubleSide }),
-      );
-      // остриё чуть не доходит до города, чтобы не прятаться под кольцом-пульсом; плоскость — касательная к сфере
-      const tip = curve.getPoint(0.975);
-      const n = tip.clone().normalize();
-      const fwd = curve.getTangent(0.975);
-      fwd.sub(n.clone().multiplyScalar(fwd.dot(n))).normalize();
-      const side = new THREE.Vector3().crossVectors(n, fwd);
-      arrow.matrixAutoUpdate = false;
-      arrow.matrix.makeBasis(fwd, side, n).setPosition(tip.multiplyScalar(1.004));
-      arrow.visible = false;
-      globe.add(arrow);
-      return { mat, arrow };
-    });
+    const ROUTE_N = 420;
+    const ROUTE_HW = 0.0085;
+    const routeEnd = toVec(kz.lat + 0.4, kz.lon - 0.8, 1.02);
+    const routePts = new THREE.CatmullRomCurve3(
+      [
+        toVec(35, 175, 1.08),
+        toVec(50, 122, 1.1),
+        toVec(kz.lat, kz.lon, 1.015),
+        toVec(40, 63, 1.16),
+        toVec(ae.lat, ae.lon, 1.015),
+        toVec(41, 37, 1.2),
+        toVec(cz.lat, cz.lon, 1.015),
+        toVec(58, 42, 1.18),
+        routeEnd,
+      ],
+      false,
+      "centripetal",
+    )
+      .getSpacedPoints(ROUTE_N - 1)
+      .map((v) => v.setLength(Math.max(v.length(), 1.012)));
+    const routeBand = createBand(ROUTE_N);
+    const radial = new THREE.Vector3();
+    const routeLen = routeBand.set(
+      routePts,
+      (i, T, sLen) => {
+        radial.copy(routePts[i]).normalize();
+        const w0 = new THREE.Vector3().crossVectors(T, radial).normalize();
+        const n0 = new THREE.Vector3().crossVectors(w0, T).normalize();
+        const a = 0.55 * Math.sin(sLen * 7);
+        const w = w0.multiplyScalar(Math.cos(a)).addScaledVector(n0, Math.sin(a));
+        return { w, n: new THREE.Vector3().crossVectors(w, T).normalize() };
+      },
+      (i) => ROUTE_HW * Math.min(1, i / 12),
+    );
+    globe.add(routeBand.mesh);
+    // длина ленты у городов (Астану ищем только в первой половине — в конце лента возвращается к ней)
+    const cumul: number[] = [];
+    routePts.forEach((v, i) => cumul.push(i ? cumul[i - 1] + v.distanceTo(routePts[i - 1]) : 0));
+    const sAt = (v: THREE.Vector3, upto = ROUTE_N) => {
+      let best = 1e9;
+      let at = 0;
+      for (let i = 0; i < upto; i++) {
+        const d = routePts[i].distanceToSquared(v);
+        if (d < best) {
+          best = d;
+          at = cumul[i];
+        }
+      }
+      return at;
+    };
+    const sKz = sAt(toVec(kz.lat, kz.lon, 1.015), ROUTE_N / 2);
+    const sAe = sAt(toVec(ae.lat, ae.lon, 1.015));
+    const sCz = sAt(toVec(cz.lat, cz.lon, 1.015));
+
+    // Финал: из Астаны лента взмывает к экрану и выписывает рамку «7» ровно там, где на экране
+    // стоит «7» логотипа (LogoReveal); точки считаются каждый кадр в плоскости перед камерой
+    const FIN_LIFT = 44;
+    const FIN_SEVEN = 110;
+    const finBand = createBand(FIN_LIFT + FIN_SEVEN);
+    scene.add(finBand.mesh);
+    const finPts = Array.from({ length: FIN_LIFT + FIN_SEVEN }, () => new THREE.Vector3());
+    const finHalf = new Float32Array(FIN_LIFT + FIN_SEVEN);
+    const FIN_DEPTH = 0.18;
+    const liftA = new THREE.Vector3();
+    const liftUp = new THREE.Vector3();
+    const view = new THREE.Vector3();
 
     // Метки городов: кольцо-пульс
     const rings = worldV3.places.map((p, i) => {
@@ -377,34 +392,55 @@ export function WorldV6() {
       globe.rotation.set(rx, ry, 0);
       // Земля поднимается из-под нижнего края, камера отходит — горизонт сворачивается в шар
       const rise = smooth(0, 0.22, p);
-      globe.position.y = mix(LIFT_Y, 0, rise);
-      halo.position.copy(globe.position);
       const zoom = mix(mix(LIFT_Z, 3.4, rise), 2.75, kzIn);
       // на вертикальном экране отходим дальше, чтобы подписи помещались
       const fit = Math.max(1, 0.95 / camera.aspect);
       camera.position.z = mix(mix(mix(zoom, 3.0, toAe), 3.6, out), LAND_Z, land) * fit;
-      // у поверхности глобус растворяется в светлом небе — к концу секции на экране только фон страницы
-      // гаснет быстро, как только начинает собираться логотип (land > 0,5), чтобы не мешать буквам
-      canvas.style.opacity = String(1 - smooth(0.4, 0.75, land));
+      globe.position.set(0, mix(LIFT_Y, 0, rise), 0);
+      // на посадке глобус уезжает так, чтобы Астана встала под острием «7» логотипа: оттуда лента
+      // поднимется по диагонали знака и выпишет его одним росчерком
+      const svg = logoRef.current?.querySelector("svg");
+      const shift = smooth(0.05, 0.45, land);
+      if (svg && shift > 0) {
+        const lr = svg.getBoundingClientRect();
+        const cr = canvas.getBoundingClientRect();
+        const tipX = ((lr.left + ((SEVEN_STROKE[0][0] + 40) / 1190) * lr.width - cr.left) / cr.width) * 2 - 1;
+        const tipY = 1 - ((lr.top + ((SEVEN_STROKE[0][1] + 60) / 400) * lr.height - cr.top) / cr.height) * 2;
+        // конец ленты у Астаны при текущем повороте глобуса (без сдвига) — его и ставим на место
+        const anchor = tmp.copy(routeEnd).applyEuler(globe.rotation);
+        const halfH = Math.tan((camera.fov * DEG) / 2) * (camera.position.z - anchor.z);
+        // точно на продолжении диагонали «7» (в единицах логотипа она идёт на 130 вправо и 223 вверх)
+        const down = Math.min(0.6, tipY + 0.8);
+        const left = down * (130 / 223) * (cr.height / cr.width);
+        globe.position.x = mix(0, (tipX - left) * halfH * camera.aspect - anchor.x, shift);
+        globe.position.y = mix(globe.position.y, (tipY - down) * halfH - anchor.y, shift);
+      }
+      halo.position.copy(globe.position);
       const leave = 1 - smooth(0, 0.3, land);
+      // на посадке глобус гаснет (точки, тело, ореол, контуры, кольца), а лента остаётся
+      const gfade = smooth(0.35, 0.65, land);
+      dotsMat.uniforms.uFade.value = gfade;
+      (body.material as THREE.ShaderMaterial).uniforms.uAlpha.value = 1 - gfade;
+      (halo.material as THREE.ShaderMaterial).uniforms.uFade.value = gfade;
 
       const glow = dotsMat.uniforms.uGlow.value as THREE.Vector3;
       glow.set(kzIn, clamp01((p - 0.5) / 0.06), clamp01((p - 0.72) / 0.06));
       outlineMats.forEach((m, i) => {
-        if (m) m.opacity = 0.35 + 0.65 * glow.getComponent(i);
+        if (m) m.opacity = (0.35 + 0.65 * glow.getComponent(i)) * (1 - gfade);
       });
-      [clamp01((p - 0.42) / 0.12), clamp01((p - 0.64) / 0.12)].forEach((k, i) => {
-        const a = arcs[i];
-        a.mat.uniforms.uProgress.value = k * 1.02;
-        const shown = clamp01((k - 0.9) / 0.1);
-        a.arrow.visible = shown > 0;
-        (a.arrow.material as THREE.MeshBasicMaterial).opacity = shown * leave;
-      });
+      // голова ленты маршрута: к Астане (вместе с фокусом на Казахстан) → Дубай → Прага → назад к Астане
+      const leg = (a: number, b: number, k: number) => (b - a) * ease(clamp01(k));
+      routeBand.mesh.material.uniforms.uHead.value =
+        leg(0, sKz, (p - 0.16) / 0.12) +
+        leg(sKz, sAe, (p - 0.42) / 0.12) +
+        leg(sAe, sCz, (p - 0.64) / 0.12) +
+        leg(sCz, routeLen, land / 0.3);
+      routeBand.mesh.material.uniforms.uAlpha.value = 1 - gfade;
       rings.forEach((r, i) => {
         const on = i === 0 ? kzIn : glow.getComponent(i);
         const pulse = 1 + ((t * 0.8 + i * 0.3) % 1) * 1.6;
         r.scale.setScalar(on * pulse);
-        (r.material as THREE.MeshBasicMaterial).opacity = on * (1 - ((t * 0.8 + i * 0.3) % 1) * 0.8);
+        (r.material as THREE.MeshBasicMaterial).opacity = on * (1 - ((t * 0.8 + i * 0.3) % 1) * 0.8) * (1 - gfade);
       });
 
       // подписи привязаны к точкам на глобусе
@@ -429,11 +465,76 @@ export function WorldV6() {
         titleRef.current.style.opacity = String(out * leave);
         titleRef.current.style.transform = `translateY(${(1 - out) * 30 - (1 - leave) * 40}px)`;
       }
-      // логотип собирается, как только глобус начал растворяться над Казахстаном; надпись —
-      // белая на тёмном небе, фирменная серая на светлом
+      // финал: лента из Астаны взмывает к экрану и выписывает рамку «7» на месте «7» логотипа
       const logo = logoRef.current;
+      const trace = clamp01((land - 0.3) / 0.5);
+      finBand.mesh.visible = trace > 0 && !!svg;
+      if (finBand.mesh.visible && svg) {
+        const lr = svg.getBoundingClientRect();
+        const cr = canvas.getBoundingClientRect();
+        const halfH = Math.tan((camera.fov * DEG) / 2);
+        // точка логотипа (единицы SVG) → мир в плоскости FIN_DEPTH перед камерой (камера смотрит вдоль −Z)
+        const toWorld = (ux: number, uy: number, out: THREE.Vector3) => {
+          const nx = ((lr.left + ((ux + 40) / 1190) * lr.width - cr.left) / cr.width) * 2 - 1;
+          const ny = 1 - ((lr.top + ((uy + 60) / 400) * lr.height - cr.top) / cr.height) * 2;
+          return out.set(nx * halfH * FIN_DEPTH * camera.aspect, ny * halfH * FIN_DEPTH, camera.position.z - FIN_DEPTH);
+        };
+        // полуширина в мире для заданной полуширины в пикселях на глубине точки
+        const pxToWorld = (px: number, v: THREE.Vector3) => (px * 2 * halfH * (camera.position.z - v.z)) / cr.height;
+        const sevenPts = new THREE.CatmullRomCurve3(
+          SEVEN_STROKE.map(([x, y]) => toWorld(x, y, new THREE.Vector3())),
+          false,
+          "centripetal",
+        ).getSpacedPoints(FIN_SEVEN - 1);
+        liftA.copy(routeEnd).applyMatrix4(globe.matrixWorld);
+        liftUp.copy(liftA).sub(globe.position).normalize();
+        const tip = sevenPts[0];
+        // Астана стоит под острием (см. сдвиг глобуса выше): лента поднимается к нему снизу и входит
+        // в остриё по продолжению диагонали «7» — не поперёк букв и без лишнего штриха
+        const diag = sevenPts[Math.round(FIN_SEVEN * 0.3)].clone().sub(tip);
+        const lift = new THREE.CubicBezierCurve3(
+          liftA,
+          liftA.clone().addScaledVector(liftUp, 0.25),
+          tip.clone().addScaledVector(diag, -0.5),
+          tip,
+        ).getSpacedPoints(FIN_LIFT);
+        let liftLen = 0;
+        for (let i = 1; i <= FIN_LIFT; i++) liftLen += lift[i].distanceTo(lift[i - 1]);
+        const routePx = 7;
+        const sevenPx = (SEVEN_HALF / 1190) * lr.width;
+        for (let i = 0; i < FIN_LIFT; i++) {
+          finPts[i].copy(lift[i]);
+          finHalf[i] = pxToWorld(routePx + (sevenPx - routePx) * (i / FIN_LIFT), lift[i]);
+        }
+        for (let i = 0; i < FIN_SEVEN; i++) {
+          finPts[FIN_LIFT + i].copy(sevenPts[i]);
+          finHalf[FIN_LIFT + i] = pxToWorld(sevenPx, sevenPts[i]);
+        }
+        const finLen = finBand.set(
+          finPts,
+          (i, T) => {
+            // подъём: нормаль поворачивается от «вверх от Земли» к «на зрителя»; рамка «7» — лицом к зрителю
+            view.copy(camera.position).sub(finPts[i]).normalize();
+            const k = Math.min(1, i / FIN_LIFT);
+            const n0 = liftUp.clone().lerp(view, k * k).normalize();
+            const w = new THREE.Vector3().crossVectors(T, n0).normalize();
+            return { w, n: new THREE.Vector3().crossVectors(w, T).normalize() };
+          },
+          (i) => finHalf[i],
+        );
+        const fu = finBand.mesh.material.uniforms;
+        // по времени: подъём к экрану, затем — отдельно и заметно — сама рамка «7»
+        // (в мире она в десятки раз короче подъёма, поэтому делить по длине нельзя)
+        fu.uHead.value =
+          liftLen * ease(clamp01(trace / 0.45)) + (finLen - liftLen + 1e-4) * ease(clamp01((trace - 0.45) / 0.55));
+        fu.uFlat.value = smooth(0.6, 0.8, land);
+        // когда рамка дописана, её подхватывает настоящий знак логотипа, а лента тает
+        fu.uAlpha.value = 1 - smooth(0.82, 0.95, land);
+      }
+      // логотип: рамку «7» подхватывает настоящий знак, затем малая «7» и буквы; надпись —
+      // белая на тёмном небе, фирменная серая на светлом
       if (logo) {
-        const on = land > 0.5 ? "true" : "false";
+        const on = land > 0.8 ? "true" : "false";
         if (logo.dataset.on !== on) logo.dataset.on = on;
         logo.style.color = css(mixRgb(dark ? INK_DARK : LOGO_GRAY, INK_DARK, smooth(0.35, 0.6, night)));
       }
