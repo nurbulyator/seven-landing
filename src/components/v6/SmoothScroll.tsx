@@ -26,8 +26,10 @@ const easeInOut = (t: number) => (1 - Math.cos(Math.PI * t)) / 2;
  * Шкала зоны ролика та же, что у полёта карточки в PageGL: старт — верх ролика на 0,98 экрана,
  * конец — на 0,12; шкала посадки — та же, что у сцены глобуса (доли прокрутки секции #world).
  * При «уменьшить движение» выключено.
+ * reelFrom — захват ролика начинается раньше, с этой прокрутки (доля экрана), и сам доводит ленту
+ * и полёт карточки (/v7: второе движение колеса); reelMs — его длительность.
  */
-export function SmoothScroll() {
+export function SmoothScroll({ reelFrom, reelMs = CAPTURE_MS }: { reelFrom?: number; reelMs?: number } = {}) {
   useEffect(() => {
     if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
     let current = window.scrollY;
@@ -46,7 +48,7 @@ export function SmoothScroll() {
       const card = document.querySelector<HTMLElement>('[data-ribbon="reel-card"]');
       if (card) {
         const top = card.getBoundingClientRect().top + window.scrollY;
-        list.push({ from: top - vh * 0.98, to: top - vh * 0.12, ms: CAPTURE_MS });
+        list.push({ from: reelFrom === undefined ? top - vh * 0.98 : vh * reelFrom, to: top - vh * 0.12, ms: reelMs });
       }
       // посадка: от итоговой фразы (полёт закончен) до собранного логотипа — см. WorldV6
       const world = document.getElementById("world");
@@ -119,7 +121,7 @@ export function SmoothScroll() {
       window.removeEventListener("scroll", onScroll);
       cancelAnimationFrame(raf);
     };
-  }, []);
+  }, [reelFrom, reelMs]);
 
   return null;
 }
