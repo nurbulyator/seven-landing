@@ -21,6 +21,8 @@ import {
  *    а затем выходит из-под крючка и уползает назад вверх;
  *  - карточка-«морф»: маленькая карточка, которую лента заливает цветом, а затем
  *    вытягивает в большой ролик — углы летят с разной задержкой, края выгибаются.
+ *  - элементы с data-lift получают --k (0…1) — насколько близко к ним голова ленты, а элементы
+ *    с data-pass="id" — атрибут data-passed, пока голова прошла точку маршрута с этим id (/v7: цифры).
  * Плюс DOM-эффекты: строки с data-shift съезжают по горизонтали, слова с data-push
  * отталкиваются от ленты.
  * Без WebGL или при «уменьшить движение» остаются обычные <img>/<video> из вёрстки.
@@ -343,6 +345,8 @@ export function PageGL({ ribbon: steps, children }: { ribbon: RibbonStep[]; chil
     let trigLen = 0;
     let trigScroll = 0;
     const tailPos = new THREE.Vector3();
+    const headPos = new THREE.Vector3();
+    const liftState = new WeakMap<HTMLElement, number>();
     // карта высоты бугорка под полотном: своя сцена и текстура, по которой считается рельеф
     const heightScene = new THREE.Scene();
     const heightGroup = new THREE.Group();
@@ -626,6 +630,28 @@ export function PageGL({ ribbon: steps, children }: { ribbon: RibbonStep[]; chil
         ru.uSheetR.value = 32 * dpr;
         ru.uH.value = ribbon.ridgeHeight * dpr;
         ru.uDark.value = root.dataset.theme === "dark" ? 1 : 0;
+        // data-lift: чем ближе голова ленты к элементу (к его первому ребёнку), тем больше --k
+        const lifts = document.querySelectorAll<HTMLElement>("[data-lift]");
+        if (lifts.length) {
+          ribbon.pointAt(head, headPos);
+          const hx = headPos.x + vw / 2;
+          const hy = vh / 2 - headPos.y - view;
+          lifts.forEach((el) => {
+            const r = (el.firstElementChild ?? el).getBoundingClientRect();
+            if (r.bottom < -100 || r.top > vh + 100) return;
+            const reach = Math.max(170, r.width * 0.7);
+            const near = clamp01(1 - Math.hypot(hx - (r.left + r.width / 2), hy - (r.top + r.height / 2)) / reach);
+            const prev = liftState.get(el) ?? 0;
+            const k = prev + (smooth(near) - prev) * 0.18;
+            liftState.set(el, k);
+            el.style.setProperty("--k", k.toFixed(3));
+          });
+        }
+        const marks = ribbon.marks;
+        document.querySelectorAll<HTMLElement>("[data-pass]").forEach((el) => {
+          const mark = marks.get(el.dataset.pass ?? "");
+          if (mark !== undefined) el.toggleAttribute("data-passed", head >= mark);
+        });
       }
       // рельеф считаем, только пока полотно на экране и под ним есть лента
       const sheetEl = document.querySelector<HTMLElement>("[data-sheet]");

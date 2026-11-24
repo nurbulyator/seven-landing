@@ -7,7 +7,27 @@ import { ribbonRoute } from "@/components/v6/ribbonRoute";
  */
 const indexOf = (key: string) => ribbonRoute.findIndex((s) => "at" in s && s.at === key);
 
-const fromCard = ribbonRoute.slice(indexOf("intro-card"));
+/**
+ * Цифры /v7 — обычной высоты, без паузы, лента строго за прокруткой. Она почти отвесно ныряет
+ * под верхний край полотна и один раз проходит под цифрами по порядку (2005 → 20 → 250+ → 150+ →
+ * 24/7; на телефоне, где цифры в две колонки, — зигзагом): цифра над головой ленты приподнимается
+ * и досчитывает (NumbersV7). Затем выходит из-под нижнего края справа и, как в /v6, над заголовком
+ * продуктов уходит за левый край экрана.
+ */
+const underSheet: RibbonStep[] = [
+  { at: "numbers-stage", x: 0.16, y: -0.3 },
+  { at: "numbers-stage", x: 0.13, y: -0.02, layer: "under" },
+  // от цифры к цифре — по ~полщелчка колеса (dt), чтобы проход было видно, а не проскок за миг
+  ...[0, 1, 2, 3, 4].map((i): RibbonStep => ({ at: `num-${i}`, x: 0.5, y: 0.55, layer: "under", id: `num-${i}`, dt: i ? 0.07 : undefined })),
+  { at: "numbers-stage", x: 0.93, y: 0.86, layer: "under" },
+  { at: "numbers-stage", x: 0.86, y: 1.1 },
+];
+
+const fromCard = [
+  ...ribbonRoute.slice(indexOf("intro-card"), indexOf("numbers-stage")),
+  ...underSheet,
+  ...ribbonRoute.slice(indexOf("products-title")),
+];
 
 /** Из-за левого края экрана (x — доли ширины вступления, оно во всю ширину) лента полого уходит вниз за карточку. */
 const intoCard: RibbonStep[] = [{ at: "intro-card", x: -0.15, y: 0.2, z: -40 }, ...fromCard];

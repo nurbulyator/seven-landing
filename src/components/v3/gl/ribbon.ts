@@ -26,8 +26,9 @@ export type RibbonStep =
    * после неё, когда сцена уезжает вверх.
    * t — прокрутка (доля vh), на которой голова проходит точку, вместо обычного «точка поднялась
    * до 0,62 экрана»: так лента может выйти уже с первого движения колеса.
+   * dt — то же, но от предыдущей точки: голова доходит сюда не раньше чем через dt·vh прокрутки после неё.
    */
-  | { at: string; x: number; y: number; z?: number; id?: string; layer?: Layer; when?: "enter" | "leave"; t?: number }
+  | { at: string; x: number; y: number; z?: number; id?: string; layer?: Layer; when?: "enter" | "leave"; t?: number; dt?: number }
   /** петля-«лассо» вокруг элемента: задняя половина уходит за карточку */
   | { loop: string; pad?: number; turns?: number; from?: number; dir?: 1 | -1; squash?: number }
   /**
@@ -108,6 +109,8 @@ type Resolved = {
   id?: string;
   /** прокрутка (доля vh), на которой голова проходит точку — см. RibbonStep */
   t?: number;
+  /** прокрутка (доля vh) от предыдущей точки — см. RibbonStep */
+  dt?: number;
   seven?: string;
   lead?: number;
   /** половина толщины грани объёмного знака «7», px */
@@ -130,6 +133,7 @@ function resolve(steps: RibbonStep[], vw: number, vh: number, pins: Pin[]): Reso
         when: step.when,
         id: step.id,
         t: step.t,
+        dt: step.dt,
       });
     } else if ("loop" in step) {
       const r = rectOf(step.loop, pins);
@@ -641,6 +645,10 @@ export function buildRibbon(steps: RibbonStep[], vw: number, vh: number, radius:
       return;
     }
     const natural = r.realY - vh * 0.62;
+    if (r.dt !== undefined && i > 0) {
+      T.push(Math.max(natural, prev + r.dt * vh));
+      return;
+    }
     T.push(i === 0 ? natural : Math.max(natural, prev + Math.min(vh * 0.08, (S[i] - S[i - 1]) * 0.12)));
   });
   for (const g of sevens.values()) {
