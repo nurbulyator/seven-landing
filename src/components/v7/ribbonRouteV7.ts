@@ -23,8 +23,21 @@ const underSheet: RibbonStep[] = [
   { at: "numbers-stage", x: 0.86, y: 1.1 },
 ];
 
+/**
+ * Ролик: пока он раскрыт на весь экран, лента за ним (z < 0) — заходит за верхний правый угол;
+ * дальше, ещё за правым краем (там глубину не видно), она переходит на передний план и, когда
+ * листают дальше, пересекает нижний правый угол ролика уже поверх него (в /v6 — за ним).
+ */
+const reelPass: RibbonStep[] = [
+  { at: "reel-card", x: 1.03, y: 0.08, z: -40 },
+  { at: "reel-card", x: 1.06, y: 0.5, z: 30 },
+  { at: "reel-card", x: 0.82, y: 1.06, z: 30 },
+];
+
 const fromCard = [
-  ...ribbonRoute.slice(indexOf("intro-card"), indexOf("numbers-stage")),
+  ...ribbonRoute.slice(indexOf("intro-card"), indexOf("reel-card")),
+  ...reelPass,
+  ...ribbonRoute.slice(indexOf("reel"), indexOf("numbers-stage")),
   ...underSheet,
   ...ribbonRoute.slice(indexOf("products-title")),
 ];
