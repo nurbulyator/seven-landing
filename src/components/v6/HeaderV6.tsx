@@ -3,8 +3,10 @@
 import { useEffect, useState } from "react";
 
 import { Logo } from "@/components/Logo";
-import { ThemeToggle } from "@/components/ThemeToggle";
+import SpecularButton from "@/components/reactbits/SpecularButton";
+import { ThemeToggle, useTheme } from "@/components/ThemeToggle";
 import { company, contacts } from "@/content/site";
+import { scrollToSection } from "@/lib/scroll";
 
 const links = [
   { href: "#intro", label: "О компании" },
@@ -19,9 +21,11 @@ const PROBE_Y = 34;
 /**
  * Шапка /v6 — как в /v3, но над блоками с `data-night` (сцена глобуса, пока там ночь)
  * переключается на тёмные цвета и в светлой теме, чтобы не висеть светлыми «таблетками» в темноте.
+ * specular — «Связаться» кнопкой «Specular Button» из React Bits, без свечения (/v7).
  */
-export function HeaderV6() {
+export function HeaderV6({ specular = false }: { specular?: boolean } = {}) {
   const [night, setNight] = useState(false);
+  const dark = useTheme() === "dark" || night;
 
   useEffect(() => {
     let raf = 0;
@@ -75,13 +79,30 @@ export function HeaderV6() {
             {contacts.phone.label}
           </a>
           <ThemeToggle />
-          <a
-            href="#contact"
-            className="flex items-center gap-2 rounded-full bg-fg px-4 py-2 text-[0.84rem] font-medium text-bg transition-[opacity,background-color,color] duration-500 hover:opacity-85"
-          >
-            Связаться
-            <span aria-hidden className="size-1.5 rounded-full bg-accent" />
-          </a>
+          {specular ? (
+            <SpecularButton
+              size="sm"
+              radius={999}
+              glow={0}
+              tint={dark ? "#f3f5f5" : "#111618"}
+              tintOpacity={1}
+              textColor={dark ? "#050708" : "#fbfbfa"}
+              lineColor={dark ? "#00bbc4" : "#ffffff"}
+              baseColor={dark ? "#c9d3d4" : "#3a4446"}
+              onClick={() => scrollToSection("contact")}
+            >
+              Связаться
+              <span aria-hidden className="size-1.5 rounded-full bg-accent" />
+            </SpecularButton>
+          ) : (
+            <a
+              href="#contact"
+              className="flex items-center gap-2 rounded-full bg-fg px-4 py-2 text-[0.84rem] font-medium text-bg transition-[opacity,background-color,color] duration-500 hover:opacity-85"
+            >
+              Связаться
+              <span aria-hidden className="size-1.5 rounded-full bg-accent" />
+            </a>
+          )}
         </div>
       </div>
     </header>

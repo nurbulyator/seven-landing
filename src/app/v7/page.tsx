@@ -30,11 +30,11 @@ export const metadata: Metadata = {
 export default function V7Page() {
   return (
     <PageGLV7>
-      <HeaderV6 />
+      <HeaderV6 specular />
       {/* второе движение колеса уже запускает захват: лента сама доходит до ролика и переносит карточку */}
       <SmoothScroll reelFrom={0.16} reelMs={2200} />
       <main>
-        <HeroV3 globe storageKey="v7-hero-bg" defaultBackdrop="floatingLines" />
+        <HeroV3 globe specular storageKey="v7-hero-bg" defaultBackdrop="floatingLines" />
         <IntroV7 />
         <ReelV6 />
         <NumbersV7 />

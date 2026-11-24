@@ -41,3 +41,8 @@ export function band(p: number, a: number, b: number, fade = 0.05): number {
 }
 
 export const clamp01 = (v: number) => Math.min(1, Math.max(0, v));
+
+/** Плавно к разделу страницы, не трогая адрес (в /v7 в нём версия первого экрана: #hero-…). */
+export function scrollToSection(id: string) {
+  document.getElementById(id)?.scrollIntoView({ behavior: "smooth" });
+}

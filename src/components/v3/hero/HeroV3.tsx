@@ -3,6 +3,7 @@
 import dynamic from "next/dynamic";
 import { useSyncExternalStore } from "react";
 
+import SpecularButton from "@/components/reactbits/SpecularButton";
 import { useTheme } from "@/components/ThemeToggle";
 import { FluidCanvas } from "@/components/v3/hero/FluidCanvas";
 import { type BackdropStyle, HeroBackdrop } from "@/components/v3/hero/HeroBackdrop";
@@ -10,6 +11,7 @@ import { type ReactBitsKey, ReactBitsBackdrop, reactBitsBackdrops } from "@/comp
 import { ReliefCanvas } from "@/components/v3/hero/ReliefCanvas";
 import { SevenFrames } from "@/components/v3/SevenFrames";
 import { heroV3 } from "@/content/v3";
+import { scrollToSection } from "@/lib/scroll";
 
 /** Облёт Казахстана (/v7) — отдельным чанком и только на клиенте, в /v3–/v6 не грузится. */
 const HeroGlobe = dynamic(() => import("@/components/v7/HeroGlobe").then((m) => m.HeroGlobe), { ssr: false });
@@ -88,12 +90,14 @@ function setBackdrop(storageKey: string, f: Backdrop) {
 /**
  * globe — переключатель «Версия»: «Знак / Глобус / Глобус 2» вместо «Знак / Поток / Рельеф» (/v7).
  * storageKey и defaultBackdrop — свой выбор фона у страницы и фон по умолчанию.
+ * specular — кнопки «Specular Button» из React Bits (блик по кромке тянется к курсору), без свечения (/v7).
  */
 export function HeroV3({
   globe = false,
   storageKey = "v3-hero-bg",
   defaultBackdrop = "softAurora",
-}: { globe?: boolean; storageKey?: string; defaultBackdrop?: Backdrop } = {}) {
+  specular = false,
+}: { globe?: boolean; storageKey?: string; defaultBackdrop?: Backdrop; specular?: boolean } = {}) {
   const variants: VariantList = globe ? globeVariants : classicVariants;
   const variant = useHeroVariant(globe);
   const backdrop = useSyncExternalStore<Backdrop>(
@@ -147,20 +151,57 @@ export function HeroV3({
               {heroV3.lead}
             </p>
             <div className="pointer-events-auto flex flex-wrap gap-3">
-              <a
-                href="#contact"
-                className="rounded-full bg-[#00bbc4] px-6 py-3 text-[0.98rem] font-medium whitespace-nowrap text-[#050708] transition-transform hover:scale-[1.03]"
-              >
-                {heroV3.primary}
-              </a>
-              <a
-                href="#directions"
-                className={`rounded-full px-6 py-3 text-[0.98rem] font-medium whitespace-nowrap backdrop-blur-md transition-colors ${
-                  darkCard ? "bg-white/12 hover:bg-white/20" : "bg-black/5 hover:bg-black/10"
-                }`}
-              >
-                {heroV3.secondary}
-              </a>
+              {specular ? (
+                <>
+                  {/* кнопки, а не ссылки с #якорем: адрес хранит версию первого экрана (#hero-…) */}
+                  <SpecularButton
+                    size="md"
+                    radius={999}
+                    glow={0}
+                    tint="#00bbc4"
+                    tintOpacity={1}
+                    textColor="#050708"
+                    lineColor="#ffffff"
+                    baseColor="#00828a"
+                    onClick={() => scrollToSection("contact")}
+                    className="whitespace-nowrap"
+                  >
+                    {heroV3.primary}
+                  </SpecularButton>
+                  <SpecularButton
+                    size="md"
+                    radius={999}
+                    glow={0}
+                    blur={12}
+                    tint={darkCard ? "#ffffff" : "#0b1214"}
+                    tintOpacity={darkCard ? 0.12 : 0.05}
+                    textColor={darkCard ? "#ffffff" : "#0b1214"}
+                    lineColor={darkCard ? "#ffffff" : "#00bbc4"}
+                    baseColor={darkCard ? "#5b6466" : "#b9c4c5"}
+                    onClick={() => scrollToSection("directions")}
+                    className="whitespace-nowrap"
+                  >
+                    {heroV3.secondary}
+                  </SpecularButton>
+                </>
+              ) : (
+                <>
+                <a
+                  href="#contact"
+                  className="rounded-full bg-[#00bbc4] px-6 py-3 text-[0.98rem] font-medium whitespace-nowrap text-[#050708] transition-transform hover:scale-[1.03]"
+                >
+                  {heroV3.primary}
+                </a>
+                <a
+                  href="#directions"
+                  className={`rounded-full px-6 py-3 text-[0.98rem] font-medium whitespace-nowrap backdrop-blur-md transition-colors ${
+                    darkCard ? "bg-white/12 hover:bg-white/20" : "bg-black/5 hover:bg-black/10"
+                  }`}
+                >
+                  {heroV3.secondary}
+                </a>
+                </>
+              )}
             </div>
           </div>
         </div>
