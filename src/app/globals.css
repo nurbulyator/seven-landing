@@ -553,3 +553,16 @@ body {
     transform: none !important;
   }
 }
+
+/* --- /v7: смена продукта в плашке облёта --- */
+
+@keyframes tour-card-in {
+  from {
+    opacity: 0;
+    transform: translateY(0.5rem);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
