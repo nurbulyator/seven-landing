@@ -18,7 +18,8 @@ const HeroGlobe = dynamic(() => import("@/components/v7/HeroGlobe").then((m) => 
  * Первый экран /v3. По умолчанию — объёмный знак «7» (кадры Blender, поворачивается за курсором);
  * с первым движением колеса он растворяется и «переливается» в ленту, которая уходит вниз по странице.
  * «Поток» и «Рельеф» оставлены как альтернативы в переключателе; версия хранится в адресе (#hero-flow), чтобы ссылкой можно было показать конкретную.
- * В /v7 в переключателе «Знак» и «Глобус» (облёт Казахстана с продуктами из частиц).
+ * В /v7 переключатель — «Версия» страницы: «Знак», «Глобус» (облёт Казахстана с продуктами из частиц)
+ * и «Глобус 2» — пока тот же облёт, свой второй блок у него будет позже.
  */
 const classicVariants = [
   { key: "seven", label: "Знак" },
@@ -28,6 +29,7 @@ const classicVariants = [
 const globeVariants = [
   { key: "seven", label: "Знак" },
   { key: "globe", label: "Глобус" },
+  { key: "globe2", label: "Глобус 2" },
 ] as const;
 type Variant = (typeof classicVariants)[number]["key"] | (typeof globeVariants)[number]["key"];
 type VariantList = readonly { key: Variant; label: string }[];
@@ -44,6 +46,11 @@ function subscribe(listener: () => void) {
     listeners.delete(listener);
     window.removeEventListener("hashchange", listener);
   };
+}
+/** Выбранная версия первого экрана — для блоков ниже, которые от неё зависят (/v7: маршрут ленты). */
+export function useHeroVariant(globe = false): Variant {
+  const variants: VariantList = globe ? globeVariants : classicVariants;
+  return useSyncExternalStore<Variant>(subscribe, () => readVariant(variants), () => "seven");
 }
 function setVariant(v: Variant) {
   history.replaceState(null, "", `#hero-${v}`);
@@ -79,7 +86,7 @@ function setBackdrop(storageKey: string, f: Backdrop) {
 }
 
 /**
- * globe — в переключателе «Знак» и «Глобус» вместо «Знак / Поток / Рельеф» (/v7).
+ * globe — переключатель «Версия»: «Знак / Глобус / Глобус 2» вместо «Знак / Поток / Рельеф» (/v7).
  * storageKey и defaultBackdrop — свой выбор фона у страницы и фон по умолчанию.
  */
 export function HeroV3({
@@ -88,14 +95,15 @@ export function HeroV3({
   defaultBackdrop = "softAurora",
 }: { globe?: boolean; storageKey?: string; defaultBackdrop?: Backdrop } = {}) {
   const variants: VariantList = globe ? globeVariants : classicVariants;
-  const variant = useSyncExternalStore<Variant>(subscribe, () => readVariant(variants), () => "seven");
+  const variant = useHeroVariant(globe);
   const backdrop = useSyncExternalStore<Backdrop>(
     subscribeBackdrop,
     () => readBackdrop(storageKey, defaultBackdrop),
     () => defaultBackdrop,
   );
   const theme = useTheme();
-  const darkCard = variant === "flow" || variant === "globe" || theme === "dark";
+  const isGlobe = variant === "globe" || variant === "globe2";
+  const darkCard = variant === "flow" || isGlobe || theme === "dark";
 
   return (
     <section id="top" className="relative px-2.5 pt-[4.25rem] sm:px-4">
@@ -119,7 +127,7 @@ export function HeroV3({
         )}
         {variant === "flow" && <FluidCanvas />}
         {variant === "relief" && <ReliefCanvas dark={theme === "dark"} />}
-        {variant === "globe" && <HeroGlobe />}
+        {isGlobe && <HeroGlobe />}
 
         <div
           className={`pointer-events-none relative z-10 flex h-full flex-col justify-end p-6 sm:p-10 lg:p-14 ${
@@ -169,7 +177,7 @@ export function HeroV3({
       {/* переключатели для сравнения вариантов: фон и первый экран
           (справа под шапкой, чтобы не закрывали содержимое) */}
       <div className="fixed top-[4.6rem] right-4 z-50 flex flex-col items-end gap-2 text-[0.8rem] text-white">
-        {variant !== "globe" && (
+        {!isGlobe && (
           <label className="flex items-center gap-1 rounded-full bg-[#0b1214]/85 p-1 shadow-lg backdrop-blur-xl">
             <span className="hidden px-3 text-white/60 sm:inline">Фон</span>
             <span className="relative">
@@ -206,10 +214,10 @@ export function HeroV3({
         )}
         <div
           role="radiogroup"
-          aria-label="Версия первого экрана"
+          aria-label={globe ? "Версия страницы" : "Версия первого экрана"}
           className="flex items-center gap-1 rounded-full bg-[#0b1214]/85 p-1 shadow-lg backdrop-blur-xl"
         >
-          <span className="hidden px-3 text-white/60 sm:inline">Первый экран</span>
+          <span className="hidden px-3 text-white/60 sm:inline">{globe ? "Версия" : "Первый экран"}</span>
           {variants.map((v) => (
             <button
               key={v.key}
