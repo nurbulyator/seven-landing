@@ -1,5 +1,6 @@
 "use client";
 
+import dynamic from "next/dynamic";
 import { useSyncExternalStore } from "react";
 
 import { useTheme } from "@/components/ThemeToggle";
@@ -10,20 +11,29 @@ import { ReliefCanvas } from "@/components/v3/hero/ReliefCanvas";
 import { SevenFrames } from "@/components/v3/SevenFrames";
 import { heroV3 } from "@/content/v3";
 
+/** Облёт Казахстана (/v7) — отдельным чанком и только на клиенте, в /v3–/v6 не грузится. */
+const HeroGlobe = dynamic(() => import("@/components/v7/HeroGlobe").then((m) => m.HeroGlobe), { ssr: false });
+
 /**
  * Первый экран /v3. По умолчанию — объёмный знак «7» (кадры Blender, поворачивается за курсором);
  * с первым движением колеса он растворяется и «переливается» в ленту, которая уходит вниз по странице.
  * «Поток» и «Рельеф» оставлены как альтернативы в переключателе; версия хранится в адресе (#hero-flow), чтобы ссылкой можно было показать конкретную.
+ * В /v7 в переключателе «Знак» и «Глобус» (облёт Казахстана с продуктами из частиц).
  */
-const variants = [
+const classicVariants = [
   { key: "seven", label: "Знак" },
   { key: "flow", label: "Поток" },
   { key: "relief", label: "Рельеф" },
 ] as const;
-type Variant = (typeof variants)[number]["key"];
+const globeVariants = [
+  { key: "seven", label: "Знак" },
+  { key: "globe", label: "Глобус" },
+] as const;
+type Variant = (typeof classicVariants)[number]["key"] | (typeof globeVariants)[number]["key"];
+type VariantList = readonly { key: Variant; label: string }[];
 
 const listeners = new Set<() => void>();
-function readVariant(): Variant {
+function readVariant(variants: VariantList): Variant {
   const hash = window.location.hash.replace("#hero-", "");
   return variants.find((v) => v.key === hash)?.key ?? "seven";
 }
@@ -49,31 +59,43 @@ const ownBackdrops = [
 const backdrops = [...ownBackdrops, ...reactBitsBackdrops];
 type Backdrop = (typeof backdrops)[number]["key"];
 const isReactBits = (b: Backdrop): b is ReactBitsKey => reactBitsBackdrops.some((r) => r.key === b);
-const BG_KEY = "v3-hero-bg";
 const bgListeners = new Set<() => void>();
-function readBackdrop(): Backdrop {
+function readBackdrop(storageKey: string, fallback: Backdrop): Backdrop {
   let saved: string | null = null;
   try {
-    saved = localStorage.getItem(BG_KEY);
+    saved = localStorage.getItem(storageKey);
   } catch {}
-  return backdrops.find((f) => f.key === saved)?.key ?? "softAurora";
+  return backdrops.find((f) => f.key === saved)?.key ?? fallback;
 }
 function subscribeBackdrop(listener: () => void) {
   bgListeners.add(listener);
   return () => bgListeners.delete(listener);
 }
-function setBackdrop(f: Backdrop) {
+function setBackdrop(storageKey: string, f: Backdrop) {
   try {
-    localStorage.setItem(BG_KEY, f);
+    localStorage.setItem(storageKey, f);
   } catch {}
   bgListeners.forEach((l) => l());
 }
 
-export function HeroV3() {
-  const variant = useSyncExternalStore<Variant>(subscribe, readVariant, () => "seven");
-  const backdrop = useSyncExternalStore<Backdrop>(subscribeBackdrop, readBackdrop, () => "softAurora");
+/**
+ * globe — в переключателе «Знак» и «Глобус» вместо «Знак / Поток / Рельеф» (/v7).
+ * storageKey и defaultBackdrop — свой выбор фона у страницы и фон по умолчанию.
+ */
+export function HeroV3({
+  globe = false,
+  storageKey = "v3-hero-bg",
+  defaultBackdrop = "softAurora",
+}: { globe?: boolean; storageKey?: string; defaultBackdrop?: Backdrop } = {}) {
+  const variants: VariantList = globe ? globeVariants : classicVariants;
+  const variant = useSyncExternalStore<Variant>(subscribe, () => readVariant(variants), () => "seven");
+  const backdrop = useSyncExternalStore<Backdrop>(
+    subscribeBackdrop,
+    () => readBackdrop(storageKey, defaultBackdrop),
+    () => defaultBackdrop,
+  );
   const theme = useTheme();
-  const darkCard = variant === "flow" || theme === "dark";
+  const darkCard = variant === "flow" || variant === "globe" || theme === "dark";
 
   return (
     <section id="top" className="relative px-2.5 pt-[4.25rem] sm:px-4">
@@ -97,6 +119,7 @@ export function HeroV3() {
         )}
         {variant === "flow" && <FluidCanvas />}
         {variant === "relief" && <ReliefCanvas dark={theme === "dark"} />}
+        {variant === "globe" && <HeroGlobe />}
 
         <div
           className={`pointer-events-none relative z-10 flex h-full flex-col justify-end p-6 sm:p-10 lg:p-14 ${
@@ -146,39 +169,41 @@ export function HeroV3() {
       {/* переключатели для сравнения вариантов: фон и первый экран
           (справа под шапкой, чтобы не закрывали содержимое) */}
       <div className="fixed top-[4.6rem] right-4 z-50 flex flex-col items-end gap-2 text-[0.8rem] text-white">
-        <label className="flex items-center gap-1 rounded-full bg-[#0b1214]/85 p-1 shadow-lg backdrop-blur-xl">
-          <span className="hidden px-3 text-white/60 sm:inline">Фон</span>
-          <span className="relative">
-            <select
-              aria-label="Фон первого экрана"
-              value={backdrop}
-              onChange={(e) => setBackdrop(e.target.value as Backdrop)}
-              className="cursor-pointer appearance-none rounded-full bg-white py-1.5 pr-8 pl-3.5 text-[#0b1214] outline-none focus-visible:ring-2 focus-visible:ring-teal"
-            >
-              <optgroup label="Свои">
-                {ownBackdrops.map((f) => (
-                  <option key={f.key} value={f.key}>
-                    {f.label}
-                  </option>
-                ))}
-              </optgroup>
-              <optgroup label="React Bits">
-                {reactBitsBackdrops.map((f) => (
-                  <option key={f.key} value={f.key}>
-                    {f.label}
-                  </option>
-                ))}
-              </optgroup>
-            </select>
-            <svg
-              aria-hidden
-              viewBox="0 0 12 12"
-              className="pointer-events-none absolute top-1/2 right-3 size-3 -translate-y-1/2 text-[#0b1214]"
-            >
-              <path d="M2.5 4.5 6 8l3.5-3.5" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" />
-            </svg>
-          </span>
-        </label>
+        {variant !== "globe" && (
+          <label className="flex items-center gap-1 rounded-full bg-[#0b1214]/85 p-1 shadow-lg backdrop-blur-xl">
+            <span className="hidden px-3 text-white/60 sm:inline">Фон</span>
+            <span className="relative">
+              <select
+                aria-label="Фон первого экрана"
+                value={backdrop}
+                onChange={(e) => setBackdrop(storageKey, e.target.value as Backdrop)}
+                className="cursor-pointer appearance-none rounded-full bg-white py-1.5 pr-8 pl-3.5 text-[#0b1214] outline-none focus-visible:ring-2 focus-visible:ring-teal"
+              >
+                <optgroup label="Свои">
+                  {ownBackdrops.map((f) => (
+                    <option key={f.key} value={f.key}>
+                      {f.label}
+                    </option>
+                  ))}
+                </optgroup>
+                <optgroup label="React Bits">
+                  {reactBitsBackdrops.map((f) => (
+                    <option key={f.key} value={f.key}>
+                      {f.label}
+                    </option>
+                  ))}
+                </optgroup>
+              </select>
+              <svg
+                aria-hidden
+                viewBox="0 0 12 12"
+                className="pointer-events-none absolute top-1/2 right-3 size-3 -translate-y-1/2 text-[#0b1214]"
+              >
+                <path d="M2.5 4.5 6 8l3.5-3.5" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" />
+              </svg>
+            </span>
+          </label>
+        )}
         <div
           role="radiogroup"
           aria-label="Версия первого экрана"
