@@ -5,23 +5,26 @@ import { useEffect, useRef } from "react";
 import { numbers } from "@/content/site";
 import { aboutV7 } from "@/content/v7";
 
-/** Цифры-количества досчитывают от нуля, когда до них доходит лента; год и «24/7» просто проявляются. */
+/** Цифры-количества досчитывают от нуля; год и «24/7» просто проявляются. */
 const COUNTED = new Set<string>(["20", "250+", "150+"]);
 /** Длительность счёта, мс. */
 const COUNT_MS = 1400;
-/** Цифры стартуют по очереди: следующая — не раньше чем через столько мс после предыдущей. */
-const GAP_MS = 450;
+/** Цифры стартуют лесенкой: следующая — не раньше чем через столько мс после предыдущей. */
+const GAP_MS = 150;
+/** Цифра встаёт в очередь, когда её верх поднялся выше этой доли экрана. */
+const REVEAL_AT = 0.85;
 /** Появление цифры в её очередь: выезжает снизу из размытия, мс (счёт идёт параллельно). */
 const REVEAL_MS = 750;
 
 /**
  * Блок цифр /v7 — вместо закреплённого экрана /v3–/v6, где цифры сменялись прокруткой.
  * Обычной высоты, листается как любой блок: на полотне [data-sheet] «О компании» и все пять цифр.
- * Лента строго за прокруткой ныряет под ткань и один раз проходит под цифрами (ribbonRouteV7):
- * цифра над головой ленты приподнимается и бирюзовеет, подпись проявляется (--k ставит PageGL
- * по data-lift). До прохода ленты цифр не видно (--w = 1); голова прошла цифру (data-pass) — в
- * свою очередь (GAP_MS) цифра выезжает снизу из размытия, подпись проявляется, а количества ещё
- * и досчитывают от нуля, один раз. Пока цифра считает, она приподнята и бирюзовая (--c). Без WebGL (и при «уменьшить движение») цифры сразу на месте.
+ * Цифры появляются сами, ленту не ждут: пока ряд не поднялся на экран, их не видно (--w = 1);
+ * поднялся — цифры быстрой лесенкой (GAP_MS) выезжают снизу из размытия, подписи проявляются, а
+ * количества ещё и досчитывают от нуля, один раз. Пока цифра считает, она приподнята и бирюзовая (--c).
+ * Лента строго за прокруткой ныряет под ткань и проходит под цифрами (ribbonRouteV7): цифра над
+ * головой ленты тоже приподнимается и бирюзовеет (--k ставит PageGL по data-lift).
+ * При «уменьшить движение» цифры сразу на месте.
  * data-ribbon="num-i" — центры цифр, через них идёт лента.
  */
 export function NumbersV7() {
@@ -29,41 +32,31 @@ export function NumbersV7() {
   const valueRefs = useRef<(HTMLSpanElement | null)[]>([]);
 
   useEffect(() => {
-    const root = document.documentElement;
-    const items = numbers.map((n, i) => ({
-      n,
-      count: COUNTED.has(n.value) ? /^(\d+)(\D*)$/.exec(n.value) : null,
-      state: "run" as "run" | "wait" | "queued" | "done", // queued — ждёт очереди, run — досчитывает
-      t0: 0,
-      i,
-    }));
-    const born = performance.now();
+    if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
+    const vh0 = window.innerHeight;
+    const items = numbers.map((n, i) => {
+      const el = itemRefs.current[i];
+      // уже на экране (перезагрузка посреди страницы) — без анимации
+      const onScreen = !el || el.getBoundingClientRect().top < vh0;
+      if (!onScreen) {
+        el.style.setProperty("--w", "1");
+        const v = valueRefs.current[i];
+        const count = COUNTED.has(n.value) ? /^(\d+)(\D*)$/.exec(n.value) : null;
+        if (v && count) v.textContent = `0${count[2]}`;
+      }
+      return {
+        n,
+        count: COUNTED.has(n.value) ? /^(\d+)(\D*)$/.exec(n.value) : null,
+        // wait — ещё не на экране, queued — ждёт своей очереди, run — появляется и досчитывает
+        state: (onScreen ? "done" : "wait") as "wait" | "queued" | "run" | "done",
+        t0: 0,
+        i,
+      };
+    });
     let lastStart = -Infinity;
-    let armed = false;
     let raf = 0;
     const tick = (now: number) => {
-      // WebGL-слой включается эффектом PageGL (он выше по дереву, срабатывает позже) — ждём его;
-      // не включился за 3 с — значит, ленты не будет, цифры остаются как есть
-      if (!armed) {
-        if (root.dataset.gl !== "on") {
-          if (now - born < 3000) raf = requestAnimationFrame(tick);
-          return;
-        }
-        armed = true;
-        const vh = window.innerHeight;
-        for (const it of items) {
-          const el = itemRefs.current[it.i];
-          // уже на экране (перезагрузка посреди страницы) — без анимации
-          if (!el || el.getBoundingClientRect().top < vh) {
-            it.state = "done";
-            continue;
-          }
-          it.state = "wait";
-          el.style.setProperty("--w", "1");
-          const v = valueRefs.current[it.i];
-          if (v && it.count) v.textContent = `0${it.count[2]}`;
-        }
-      }
+      const vh = window.innerHeight;
       let busy = false;
       for (const it of items) {
         const el = itemRefs.current[it.i];
@@ -71,9 +64,8 @@ export function NumbersV7() {
         if (!el || !v || it.state === "done") continue;
         busy = true;
         if (it.state === "wait") {
-          // голова ленты прошла точку цифры на маршруте (data-passed ставит PageGL) — даже если
-          // при быстрой прокрутке проскочила её за один кадр
-          if (!el.hasAttribute("data-passed")) continue;
+          // цифра поднялась на экран — встаёт в очередь (ленту не ждём)
+          if (el.getBoundingClientRect().top > vh * REVEAL_AT) continue;
           it.state = "queued";
           it.t0 = lastStart = Math.max(now, lastStart + GAP_MS);
         }
@@ -123,7 +115,6 @@ export function NumbersV7() {
                 itemRefs.current[i] = el;
               }}
               data-lift
-              data-pass={`num-${i}`}
               className="flex flex-col items-center text-center"
             >
               <p

@@ -21,8 +21,7 @@ import {
  *    а затем выходит из-под крючка и уползает назад вверх;
  *  - карточка-«морф»: маленькая карточка, которую лента заливает цветом, а затем
  *    вытягивает в большой ролик — углы летят с разной задержкой, края выгибаются.
- *  - элементы с data-lift получают --k (0…1) — насколько близко к ним голова ленты, а элементы
- *    с data-pass="id" — атрибут data-passed, пока голова прошла точку маршрута с этим id (/v7: цифры).
+ *  - элементы с data-lift получают --k (0…1) — насколько близко к ним голова ленты (/v7: цифры).
  * Плюс DOM-эффекты: строки с data-shift съезжают по горизонтали, слова с data-push
  * отталкиваются от ленты.
  * Без WebGL или при «уменьшить движение» остаются обычные <img>/<video> из вёрстки.
@@ -647,11 +646,6 @@ export function PageGL({ ribbon: steps, children }: { ribbon: RibbonStep[]; chil
             el.style.setProperty("--k", k.toFixed(3));
           });
         }
-        const marks = ribbon.marks;
-        document.querySelectorAll<HTMLElement>("[data-pass]").forEach((el) => {
-          const mark = marks.get(el.dataset.pass ?? "");
-          if (mark !== undefined) el.toggleAttribute("data-passed", head >= mark);
-        });
       }
       // рельеф считаем, только пока полотно на экране и под ним есть лента
       const sheetEl = document.querySelector<HTMLElement>("[data-sheet]");
