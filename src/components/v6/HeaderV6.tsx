@@ -8,7 +8,7 @@ import { ThemeToggle, useTheme } from "@/components/ThemeToggle";
 import { company, contacts } from "@/content/site";
 import { scrollToSection } from "@/lib/scroll";
 
-const links = [
+const headerLinks = [
   { href: "#intro", label: "О компании" },
   { href: "#work", label: "Продукты" },
   { href: "#directions", label: "Направления" },
@@ -21,9 +21,13 @@ const PROBE_Y = 34;
 /**
  * Шапка /v6 — как в /v3, но над блоками с `data-night` (сцена глобуса, пока там ночь)
  * переключается на тёмные цвета и в светлой теме, чтобы не висеть светлыми «таблетками» в темноте.
- * specular — «Связаться» кнопкой «Specular Button» из React Bits, без свечения (/v7).
+ * specular — «Связаться» кнопкой «Specular Button» из React Bits, без свечения (/v7);
+ * links — свои пункты меню (/v7: без «Продуктов» — этого блока там нет).
  */
-export function HeaderV6({ specular = false }: { specular?: boolean } = {}) {
+export function HeaderV6({
+  specular = false,
+  links = headerLinks,
+}: { specular?: boolean; links?: readonly { href: string; label: string }[] } = {}) {
   const [night, setNight] = useState(false);
   const dark = useTheme() === "dark" || night;
 

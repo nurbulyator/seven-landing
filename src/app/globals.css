@@ -566,3 +566,48 @@ body {
     transform: none;
   }
 }
+
+/* /v7, «Наши направления»: панель текущего направления проявляется снизу из размытия */
+@keyframes dir-in {
+  from {
+    opacity: 0;
+    transform: translateY(14px);
+    filter: blur(8px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+    filter: none;
+  }
+}
+
+/* /v7, «Наши направления»: полоска времени до следующего направления */
+@keyframes dir-progress {
+  from {
+    transform: scaleX(0);
+  }
+  to {
+    transform: scaleX(1);
+  }
+}
+
+/* /v7, «Наши направления»: «Шторка» — следующее фото раскрывается кругом снизу */
+@keyframes dir-wipe {
+  from {
+    clip-path: circle(0% at 50% 100%);
+  }
+  to {
+    clip-path: circle(150% at 50% 100%);
+  }
+}
+
+/* /v7, «Наши направления»: медленный наплыв фото (Ken Burns) */
+@keyframes dir-kb {
+  from {
+    transform: scale(1.12);
+  }
+  to {
+    transform: scale(1);
+  }
+}
+

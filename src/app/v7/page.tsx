@@ -2,14 +2,13 @@ import type { Metadata } from "next";
 
 import { Contact } from "@/components/sections/Contact";
 import { HeroV3 } from "@/components/v3/hero/HeroV3";
-import { DirectionsV3 } from "@/components/v3/sections/DirectionsV3";
 import { FactsV3 } from "@/components/v3/sections/FactsV3";
-import { ProductsV4 } from "@/components/v4/ProductsV4";
 import { HeaderV6 } from "@/components/v6/HeaderV6";
 import { PartnersLoop } from "@/components/v6/PartnersLoop";
 import { ReelV6 } from "@/components/v6/ReelV6";
 import { SmoothScroll } from "@/components/v6/SmoothScroll";
 import { WorldV6 } from "@/components/v6/WorldV6";
+import { DirectionsV7 } from "@/components/v7/DirectionsV7";
 import { IntroV7 } from "@/components/v7/IntroV7";
 import { NumbersV7 } from "@/components/v7/NumbersV7";
 import { PageGLV7 } from "@/components/v7/PageGLV7";
@@ -25,12 +24,21 @@ export const metadata: Metadata = {
  * умолчанию — Floating Lines. Вступление без заголовка: после первого экрана сразу карточка, которая
  * улетает в ролик; у «Глобуса» лента выползает из-за левого края. Цифры (NumbersV7) — вместо
  * закреплённого экрана: на полотне «О компании», лента один раз проходит под цифрами, и они по
- * очереди проявляются и досчитывают.
+ * очереди проявляются и досчитывают. Вместо «Своих продуктов» и прежних «Направлений» — один
+ * статичный блок «Наши направления» (DirectionsV7): шесть направлений с сайта компании, подачу пока
+ * сравниваем переключателем (по умолчанию — шар), лента проходит за блоком.
  */
+/** Меню /v7: «Своих продуктов» нет, «О компании» — сам блок с цифрами. */
+const links = [
+  { href: "#about", label: "О компании" },
+  { href: "#directions", label: "Направления" },
+  { href: "#world", label: "География" },
+];
+
 export default function V7Page() {
   return (
     <PageGLV7>
-      <HeaderV6 specular />
+      <HeaderV6 specular links={links} />
       {/* второе движение колеса уже запускает захват: лента сама доходит до ролика и переносит карточку */}
       <SmoothScroll reelFrom={0.16} reelMs={2200} />
       <main>
@@ -38,8 +46,7 @@ export default function V7Page() {
         <IntroV7 />
         <ReelV6 />
         <NumbersV7 />
-        <ProductsV4 form="points" />
-        <DirectionsV3 />
+        <DirectionsV7 />
         <FactsV3 vendors={<PartnersLoop />} />
         <WorldV6 />
         <Contact />
