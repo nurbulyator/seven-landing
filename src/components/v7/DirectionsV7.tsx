@@ -22,7 +22,9 @@ import { directionsV7 } from "@/content/v7";
  * времени (STEP_SEC), колесо мыши достаётся странице:
  *  - «Шар» — Infinite Menu из React Bits со своими подписями и стрелками (SphereShowcase);
  *  - «Фокус», «Шторка», «Веер», «Орбита», «Мозаика», «Куб», «Линза» — свои (DirectionsShowcase).
- * Лента по фото не ездит: тело блока — data-occlude, она проходит за ним целиком.
+ * Лента по фото не ездит: тело блока — data-occlude, она проходит за ним целиком. Кроме «Фокуса»:
+ * там заслоняют сами карточки, и лента проходит под ними, а не под невидимым прямоугольником блока.
+ * Секция обрезана только по горизонтали — карточки «Фокуса» могут выходить за сцену вверх и вниз.
  */
 const variants = [
   { key: "sphere", label: "Шар (Infinite Menu)" },
@@ -66,9 +68,10 @@ export function DirectionsV7() {
 
 
   return (
-    <section id="directions" data-ribbon="dirs" className="relative px-5 py-24 sm:px-8 lg:py-32">
+    <section id="directions" data-ribbon="dirs" className="relative overflow-x-clip px-5 py-24 sm:px-8 lg:py-32">
       <div className="mx-auto max-w-[90rem]">
-        <div className="grid gap-6 lg:grid-cols-12 lg:items-end">
+        {/* над сценой: уезжающая карточка «Фокуса» гаснет под заголовком, а не поверх него */}
+        <div className="relative z-10 grid gap-6 lg:grid-cols-12 lg:items-end">
           <h2 className="text-[clamp(2.4rem,5.4vw,5rem)] leading-[0.98] font-semibold tracking-[-0.045em] lg:col-span-6">
             {directionsV7.title}
           </h2>
@@ -77,7 +80,7 @@ export function DirectionsV7() {
           </p>
         </div>
 
-        <div data-ribbon="dirs-body" data-occlude className="relative mt-14 lg:mt-20">
+        <div data-ribbon="dirs-body" data-occlude={variant === "focus" ? undefined : true} className="relative mt-14 lg:mt-20">
           {variant === "sphere" && <SphereShowcase stepMs={STEP_SEC * 1000} theme={theme} />}
           {variant === "focus" && <FocusShowcase stepMs={STEP_SEC * 1000} />}
           {variant === "wipe" && <WipeShowcase stepMs={STEP_SEC * 1000} />}

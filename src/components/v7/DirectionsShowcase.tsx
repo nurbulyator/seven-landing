@@ -17,7 +17,9 @@ type SphereApi = { goToItem(index: number): void };
  *    под шаром стрелки «назад/вперёд» и отметки направлений; крутить можно и мышью;
  *  - «Фокус»: как вид шара (Infinite Menu) вблизи — крупная карточка в центре, слева большое
  *    название, справа заголовок, текст и теги; предыдущая карточка выглядывает из левого верхнего
- *    угла, следующая — из правого нижнего, и на каждом шаге всё доворачивается по диагонали;
+ *    угла, следующая — из правого нижнего, все прямо, без поворота; на каждом шаге всё сдвигается
+ *    по диагонали; по клику на соседнюю карточку или на полоску внизу — переход к ней; пока
+ *    курсор на центральной карточке — пауза (плашка «Пауза» в углу, полоска времени замирает);
  *  - «Шторка»: та же раскладка, но фото не едут — следующее раскрывается поверх кругом снизу
  *    и медленно наплывает;
  *  - «Веер»: карточки веером, как карты в руке, текущая встаёт вертикально и приподнимается;
@@ -36,34 +38,87 @@ const N = list.length;
 /** Сдвиг карточки i относительно текущей: от −⌊N/2⌋ до ⌈N/2⌉−1 (по кругу). */
 const offsetOf = (i: number, active: number) => ((((i - active) % N) + N + Math.floor(N / 2)) % N) - Math.floor(N / 2);
 
-/** Счётчик шагов: растёт сам каждые stepMs, пока вкладка видна. Текущее направление — step % N. */
-function useAutoStep(stepMs: number) {
+/**
+ * Счётчик шагов: растёт сам через stepMs после каждого шага, пока вкладка видна. Текущее
+ * направление — step по модулю N. setStep — ручной переход; отсчёт до следующего шага начинается
+ * заново. На паузе (paused) не растёт; после паузы досчитывает оставшееся время, а не всё заново —
+ * в лад с полоской времени, которая на паузе замирает.
+ */
+function useAutoStep(stepMs: number, paused = false) {
   const [step, setStep] = useState(0);
+  const left = useRef(stepMs);
+  // новый шаг — отсчёт с начала (эффект объявлен раньше, поэтому срабатывает до взвода таймера)
   useEffect(() => {
-    const id = window.setInterval(() => {
-      if (!document.hidden) setStep((a) => a + 1);
-    }, stepMs);
-    return () => window.clearInterval(id);
-  }, [stepMs]);
-  return step;
+    left.current = stepMs;
+  }, [stepMs, step]);
+  useEffect(() => {
+    if (paused) return;
+    const remaining = left;
+    let id = 0;
+    let t0 = 0;
+    const arm = (ms: number) => {
+      t0 = performance.now();
+      id = window.setTimeout(() => {
+        if (document.hidden) arm(stepMs);
+        else setStep((a) => a + 1);
+      }, ms);
+    };
+    arm(remaining.current);
+    return () => {
+      window.clearTimeout(id);
+      remaining.current = Math.max(0, remaining.current - (performance.now() - t0));
+    };
+  }, [stepMs, step, paused]);
+  return [step, setStep] as const;
 }
 
-/** Полоска времени до следующего шага: перезапускается на каждом шаге (key). */
-function Progress({ active, stepMs }: { active: number; stepMs: number }) {
+/**
+ * Полоска времени до следующего шага: перезапускается на каждом шаге (key), на паузе замирает.
+ * С onPick отрезки — кнопки перехода к направлению (зона нажатия выше самой полоски).
+ */
+function Progress({
+  active,
+  stepMs,
+  onPick,
+  paused = false,
+}: {
+  active: number;
+  stepMs: number;
+  onPick?: (i: number) => void;
+  paused?: boolean;
+}) {
   return (
-    <div className="mx-auto mt-8 flex max-w-[18rem] gap-1.5" aria-hidden>
-      {list.map((d, i) => (
-        <span key={d.id} className="h-[3px] flex-1 overflow-hidden rounded-full bg-fg/12">
-          {i === active && (
-            <span
-              key={active}
-              className="block h-full origin-left rounded-full bg-accent"
-              style={{ animation: `dir-progress ${stepMs}ms linear both` }}
-            />
-          )}
-          {i < active && <span className="block h-full rounded-full bg-fg/35" />}
-        </span>
-      ))}
+    <div className="mx-auto mt-8 flex max-w-[18rem] items-center gap-1.5" aria-hidden={!onPick}>
+      {list.map((d, i) => {
+        const bar = (
+          <span className="block h-[3px] w-full overflow-hidden rounded-full bg-fg/12">
+            {i === active && (
+              <span
+                key={active}
+                className="block h-full origin-left rounded-full bg-accent"
+                style={{ animation: `dir-progress ${stepMs}ms linear both`, animationPlayState: paused ? "paused" : "running" }}
+              />
+            )}
+            {i < active && <span className="block h-full rounded-full bg-fg/35" />}
+          </span>
+        );
+        return onPick ? (
+          <button
+            key={d.id}
+            type="button"
+            aria-label={`${d.id} · ${d.label}`}
+            aria-current={i === active || undefined}
+            onClick={() => onPick(i)}
+            className="flex-1 cursor-pointer py-2.5 outline-none focus-visible:[&>span]:ring-2 focus-visible:[&>span]:ring-accent"
+          >
+            {bar}
+          </button>
+        ) : (
+          <span key={d.id} className="flex-1">
+            {bar}
+          </span>
+        );
+      })}
     </div>
   );
 }
@@ -83,30 +138,88 @@ function Tags({ d, center = false }: { d: Direction; center?: boolean }) {
 const ENTER = "animate-[dir-in_800ms_cubic-bezier(0.16,1,0.3,1)_both]";
 const MOVE = "transition-[transform,opacity] duration-[1100ms] ease-[cubic-bezier(0.65,0,0.35,1)]";
 
-/** «Фокус»: вид шара вблизи — карточка в центре, соседи по диагонали, текст по бокам. */
+/**
+ * Сколько соседняя карточка «Фокуса» выступает над сценой (и столько же под ней): её центр на 0,74
+ * ширины карточки от центра, половина её высоты — 0,31 ширины. Сцену не обрезаем — вместо этого
+ * отступ сверху и снизу на этот выступ (минус 3rem — их и так даёт зазор под заголовком).
+ */
+const FOCUS_PAD = "lg:py-[max(0px,calc(min(36vw,31rem)*1.05-min(41svh,22rem)-3rem))]";
+
+/**
+ * «Фокус»: вид шара вблизи — карточка в центре, соседи по диагонали, текст по бокам. Сцена не
+ * обрезана: соседи видны целиком. Лента проходит под видимыми карточками (у каждой data-occlude),
+ * а не под невидимым прямоугольником всего блока.
+ */
 export function FocusShowcase({ stepMs }: { stepMs: number }) {
-  const active = useAutoStep(stepMs) % N;
+  // пауза — пока курсор на центральной карточке (только мышь: на телефоне «наведение» залипает)
+  const [paused, setPaused] = useState(false);
+  const [step, setStep] = useAutoStep(stepMs, paused);
+  const active = ((step % N) + N) % N;
   const d = list[active];
+  // к направлению i — коротким путём (на соседа — ровно на шаг), чтобы всё сдвинулось по диагонали
+  const pick = (i: number) => setStep((s) => s + offsetOf(i, ((s % N) + N) % N));
   return (
-    <div>
-      <div className="relative h-[min(82svh,44rem)] overflow-hidden [perspective:1600px] max-lg:h-[26rem]">
+    <div className={FOCUS_PAD}>
+      {/* isolate: карточки в своём слое, заголовок блока (z-10) остаётся над ними */}
+      <div className="relative isolate h-[min(82svh,44rem)] max-lg:h-[26rem]">
         {list.map((c, i) => {
           const o = offsetOf(i, active);
           const far = Math.abs(o) > 1;
-          // соседи — по диагонали (как плитки шара вокруг передней), дальние уезжают ещё дальше и гаснут
-          const k = far ? Math.sign(o) * 1.9 : o;
+          const near = Math.abs(o) === 1;
+          // соседи — по диагонали (как плитки шара вокруг передней), дальние уезжают дальше и гаснут
+          const k = far ? Math.sign(o) * 1.6 : o;
           const transform =
             o === 0
               ? "translate(-50%,-50%)"
-              : `translate(-50%,-50%) translate(${k * 112}%, ${k * 74}%) rotateY(${-o * 14}deg) rotateX(${o * 10}deg) scale(${far ? 0.42 : 0.62})`;
+              : `translate(-50%,-50%) translate(${k * 112}%, ${k * 74}%) scale(${far ? 0.42 : 0.62})`;
+          // div, а не button: у центральной карточки нужны события мыши (пауза), а disabled-кнопка
+          // их не получает; соседи — кнопки по роли (клик, Enter/пробел)
           return (
             <div
               key={c.id}
-              aria-hidden={o !== 0}
-              className={`absolute top-1/2 left-1/2 aspect-square w-[min(36vw,31rem)] overflow-hidden rounded-[40px] bg-bg-2 shadow-[0_40px_80px_-40px_var(--shadow)] max-lg:w-[min(78vw,22rem)] ${MOVE}`}
-              style={{ transform, opacity: far ? 0 : 1, zIndex: 10 - Math.abs(o) }}
+              role={near ? "button" : undefined}
+              tabIndex={near ? 0 : undefined}
+              aria-hidden={far || undefined}
+              aria-label={near ? `${o < 0 ? "Предыдущее" : "Следующее"} направление: ${c.label}` : undefined}
+              onClick={near ? () => pick(i) : undefined}
+              onKeyDown={
+                near
+                  ? (e) => {
+                      if (e.key !== "Enter" && e.key !== " ") return;
+                      e.preventDefault();
+                      pick(i);
+                    }
+                  : undefined
+              }
+              onPointerEnter={(e) => {
+                if (o === 0 && e.pointerType === "mouse") setPaused(true);
+              }}
+              onPointerLeave={() => setPaused(false)}
+              data-occlude={far ? undefined : true}
+              className={`absolute top-1/2 left-1/2 aspect-square w-[min(36vw,31rem)] overflow-hidden rounded-[40px] bg-bg-2 shadow-[0_40px_80px_-40px_var(--shadow)] outline-none max-lg:w-[min(78vw,22rem)] focus-visible:ring-4 focus-visible:ring-accent ${near ? "cursor-pointer" : ""} ${MOVE}`}
+              style={{ transform, opacity: far ? 0 : 1, zIndex: 10 - Math.abs(o), pointerEvents: far ? "none" : undefined }}
             >
-              <Image src={c.image} alt={c.alt} fill sizes="(max-width: 1023px) 78vw, 36vw" className="object-cover" />
+              <Image
+                src={c.image}
+                alt={o === 0 ? c.alt : ""}
+                fill
+                sizes="(max-width: 1023px) 78vw, 36vw"
+                className="object-cover"
+              />
+              {/* пока курсор на центральной карточке — листание стоит, в углу плашка «Пауза» */}
+              {o === 0 && (
+                <span
+                  aria-hidden
+                  data-on={paused}
+                  className="absolute top-6 left-6 flex items-center gap-2 rounded-full bg-[#081012]/55 py-2 pr-4 pl-3 text-[0.85rem] font-medium text-white opacity-0 backdrop-blur-md transition-[opacity,transform] duration-300 data-[on=true]:opacity-100 data-[on=false]:-translate-y-1"
+                >
+                  <svg viewBox="0 0 16 16" className="size-3" aria-hidden>
+                    <rect x="3.5" y="2.5" width="3" height="11" rx="1" fill="currentColor" />
+                    <rect x="9.5" y="2.5" width="3" height="11" rx="1" fill="currentColor" />
+                  </svg>
+                  Пауза
+                </span>
+              )}
             </div>
           );
         })}
@@ -136,7 +249,7 @@ export function FocusShowcase({ stepMs }: { stepMs: number }) {
         <p className="mt-2 leading-relaxed text-fg/70">{d.text}</p>
         <Tags d={d} center />
       </div>
-      <Progress active={active} stepMs={stepMs} />
+      <Progress active={active} stepMs={stepMs} onPick={pick} paused={paused} />
     </div>
   );
 }
@@ -183,7 +296,7 @@ const PHOTO_SIZES = "(max-width: 1023px) 80vw, 36vw";
 
 /** «Шторка»: следующее фото раскрывается поверх кругом снизу и медленно наплывает. */
 export function WipeShowcase({ stepMs }: { stepMs: number }) {
-  const step = useAutoStep(stepMs);
+  const [step] = useAutoStep(stepMs);
   const active = step % N;
   const prev = (active + N - 1) % N;
   return (
@@ -223,7 +336,7 @@ export function WipeShowcase({ stepMs }: { stepMs: number }) {
 
 /** «Веер»: карточки веером вокруг точки под сценой; текущая вертикально по центру и чуть выше. */
 export function FanShowcase({ stepMs }: { stepMs: number }) {
-  const active = useAutoStep(stepMs) % N;
+  const active = useAutoStep(stepMs)[0] % N;
   return (
     <div>
       <div className="relative h-[min(62svh,32rem)] overflow-hidden max-sm:h-[22rem]">
@@ -255,7 +368,7 @@ export function FanShowcase({ stepMs }: { stepMs: number }) {
 
 /** «Орбита»: карточки по эллипсу; угол — от сдвига относительно текущей, текущая спереди внизу. */
 export function OrbitShowcase({ stepMs }: { stepMs: number }) {
-  const step = useAutoStep(stepMs);
+  const [step] = useAutoStep(stepMs);
   const active = step % N;
   return (
     <div>
@@ -298,7 +411,7 @@ const MOSAIC = [
 
 /** «Мозаика»: следующее направление переезжает в большую плитку, остальные — по кругу. */
 export function MosaicShowcase({ stepMs }: { stepMs: number }) {
-  const active = useAutoStep(stepMs) % N;
+  const active = useAutoStep(stepMs)[0] % N;
   const d = list[active];
   return (
     <div>
@@ -345,7 +458,7 @@ export function MosaicShowcase({ stepMs }: { stepMs: number }) {
  * граней четыре — на грань подставляется направление по её положению относительно передней.
  */
 export function CubeShowcase({ stepMs }: { stepMs: number }) {
-  const step = useAutoStep(stepMs);
+  const [step] = useAutoStep(stepMs);
   const active = step % N;
   return (
     <div>
@@ -383,7 +496,7 @@ export function CubeShowcase({ stepMs }: { stepMs: number }) {
 
 /** «Линза»: широкое фото с медленным наплывом, смена растворением; справа миниатюры. */
 export function LensShowcase({ stepMs }: { stepMs: number }) {
-  const step = useAutoStep(stepMs);
+  const [step] = useAutoStep(stepMs);
   const active = step % N;
   const d = list[active];
   return (
