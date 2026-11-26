@@ -95,3 +95,6 @@ export const directionsV7 = {
     },
   ],
 } as const;
+
+/** Бегущая надпись под логотипами вендоров — как на сайте компании (company.wordmark, слово в слово). */
+export const wordmarkV7 = "SEVEN HILLS OF KAZAKHSTAN";

@@ -12,6 +12,7 @@ import { DirectionsV7 } from "@/components/v7/DirectionsV7";
 import { IntroV7 } from "@/components/v7/IntroV7";
 import { NumbersV7 } from "@/components/v7/NumbersV7";
 import { PageGLV7 } from "@/components/v7/PageGLV7";
+import { WordmarkLoop } from "@/components/v7/WordmarkLoop";
 
 export const metadata: Metadata = {
   title: "Seven Hills of Kazakhstan — версия 7",
@@ -47,7 +48,17 @@ export default function V7Page() {
         <ReelV6 />
         <NumbersV7 />
         <DirectionsV7 />
-        <FactsV3 vendors={<PartnersLoop />} />
+        <FactsV3
+          vendors={
+            <>
+              <PartnersLoop />
+              {/* под логотипами — «SEVEN HILLS OF KAZAKHSTAN», едет в обратную сторону */}
+              <div className="mt-8 lg:mt-12">
+                <WordmarkLoop />
+              </div>
+            </>
+          }
+        />
         <WorldV6 />
         <Contact />
       </main>
