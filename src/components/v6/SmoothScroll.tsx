@@ -27,9 +27,14 @@ const easeInOut = (t: number) => (1 - Math.cos(Math.PI * t)) / 2;
  * конец — на 0,12; шкала посадки — та же, что у сцены глобуса (доли прокрутки секции #world).
  * При «уменьшить движение» выключено.
  * reelFrom — захват ролика начинается раньше, с этой прокрутки (доля экрана), и сам доводит ленту
- * и полёт карточки (/v7: второе движение колеса); reelMs — его длительность.
+ * и полёт карточки (/v7: второе движение колеса); reelMs — его длительность. landing={false} —
+ * без зоны посадки (/v7: глобус — статичный блок, сажать нечего).
  */
-export function SmoothScroll({ reelFrom, reelMs = CAPTURE_MS }: { reelFrom?: number; reelMs?: number } = {}) {
+export function SmoothScroll({
+  reelFrom,
+  reelMs = CAPTURE_MS,
+  landing = true,
+}: { reelFrom?: number; reelMs?: number; landing?: boolean } = {}) {
   useEffect(() => {
     if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
     let current = window.scrollY;
@@ -51,7 +56,7 @@ export function SmoothScroll({ reelFrom, reelMs = CAPTURE_MS }: { reelFrom?: num
         list.push({ from: reelFrom === undefined ? top - vh * 0.98 : vh * reelFrom, to: top - vh * 0.12, ms: reelMs });
       }
       // посадка: от итоговой фразы (полёт закончен) до собранного логотипа — см. WorldV6
-      const world = document.getElementById("world");
+      const world = landing ? document.getElementById("world") : null;
       if (world) {
         const top = world.getBoundingClientRect().top + window.scrollY;
         const total = world.offsetHeight - vh;
@@ -88,6 +93,8 @@ export function SmoothScroll({ reelFrom, reelMs = CAPTURE_MS }: { reelFrom?: num
     const onWheel = (e: WheelEvent) => {
       // масштаб и горизонтальная прокрутка — браузеру
       if (e.ctrlKey || Math.abs(e.deltaX) > Math.abs(e.deltaY)) return;
+      // открытое окно (форма запроса /v7) прокручивается само, страницу под ним не двигаем
+      if (e.target instanceof Element && e.target.closest("dialog[open]")) return;
       e.preventDefault();
       if (glide) return;
       const vh = window.innerHeight;
@@ -121,7 +128,7 @@ export function SmoothScroll({ reelFrom, reelMs = CAPTURE_MS }: { reelFrom?: num
       window.removeEventListener("scroll", onScroll);
       cancelAnimationFrame(raf);
     };
-  }, [reelFrom, reelMs]);
+  }, [reelFrom, reelMs, landing]);
 
   return null;
 }
