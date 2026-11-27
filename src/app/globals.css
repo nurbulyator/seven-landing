@@ -590,24 +590,3 @@ body {
     transform: scaleX(1);
   }
 }
-
-/* /v7, «Наши направления»: «Шторка» — следующее фото раскрывается кругом снизу */
-@keyframes dir-wipe {
-  from {
-    clip-path: circle(0% at 50% 100%);
-  }
-  to {
-    clip-path: circle(150% at 50% 100%);
-  }
-}
-
-/* /v7, «Наши направления»: медленный наплыв фото (Ken Burns) */
-@keyframes dir-kb {
-  from {
-    transform: scale(1.12);
-  }
-  to {
-    transform: scale(1);
-  }
-}
-
