@@ -25,21 +25,21 @@ import { worldV7 } from "@/content/v7";
  * глобус поворачивается к её стране, отсчёт начинается заново. Лента страницы до блока не доходит.
  */
 
-const STEP_MS = 5000;
+const STEP_MS = 3800;
 const DEG = Math.PI / 180;
 const FOV = 32;
 /** Длительность волны проявления, с. */
-const REVEAL_S = 2.6;
+const REVEAL_S = 2;
 
 const clamp01 = (v: number) => Math.min(1, Math.max(0, v));
 const ease = (v: number) => v * v * (3 - 2 * v);
 
 /** Огоньки областей: задержка между соседними, сбор в Астану, полёт по дуге, обратно, разбег, с. */
-const STAGGER = 0.035;
-const GATHER_S = 0.7;
-const FLY_S = 1.2;
-const BACK_S = 1.1;
-const SPREAD_S = 0.9;
+const STAGGER = 0.026;
+const GATHER_S = 0.5;
+const FLY_S = 0.9;
+const BACK_S = 0.8;
+const SPREAD_S = 0.7;
 /** Центры 20 областей Казахстана (17 областей и Астана, Алматы, Шымкент): lat, lon. */
 const REGIONS: [number, number][] = [
   [51.17, 71.45], // Астана
@@ -460,13 +460,13 @@ function Globe({ active, play }: { active: number; play: boolean }) {
       time += dt;
       const pal = PALETTE[darkRef.current ? "dark" : "light"];
       const a = activeRef.current;
-      const k = 1 - Math.exp(-dt * 2.2);
+      const k = 1 - Math.exp(-dt * 3);
 
       // волна проявления и вход: кромка, ореол и контуры проявляются вместе с ней
       reveal = Math.min(REVEAL_S, reveal + dt);
       const intro = reveal / REVEAL_S;
       const v = views[a];
-      const kRot = 1 - Math.exp(-dt * (intro < 1 ? 1.6 : 2.2));
+      const kRot = 1 - Math.exp(-dt * (intro < 1 ? 2.2 : 3));
       rx += (v.x - rx) * kRot;
       ry += (v.y + Math.sin(time * 0.25) * 0.06 - ry) * kRot;
       // перетаскивание: пока держат — смещение от ракурса; отпустили — докручивается по инерции
@@ -585,7 +585,7 @@ function Globe({ active, play }: { active: number; play: boolean }) {
           head = arc.len * (1 - ease(clamp01((modeT - (REG_N - 1) * STAGGER) / BACK_S)));
         } else if (prevMode === j + 1) {
           head = arc.len;
-          tail = arc.len * ease(clamp01(modeT / 0.9));
+          tail = arc.len * ease(clamp01(modeT / 0.7));
         }
         arc.head += (head - arc.head) * kArc;
         arc.tail += (tail - arc.tail) * kArc;
